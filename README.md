@@ -15,3 +15,7 @@ SSH into the VM and run:
 cd /home/nsnfrd768/barn/barn
 ./deploy.sh
 ```
+
+## systemd
+
+`barn-scan.service` WorkingDirectory and ExecStart point to `/home/nsnfrd768/barn/barn/scan/`.
