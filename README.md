@@ -19,3 +19,4 @@ cd /home/nsnfrd768/barn/barn
 ## systemd
 
 `barn-scan.service` WorkingDirectory and ExecStart point to `/home/nsnfrd768/barn/barn/scan/`.
+
