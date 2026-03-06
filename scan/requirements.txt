@@ -1,0 +1,28 @@
+# Web framework
+flask>=2.0.0
+
+# Browser automation for PG&E power checking
+playwright>=1.40.0
+
+# Optional: Supabase cloud sync
+supabase>=1.0.0
+
+# Load .env configuration (scan tuning, auth, etc.)
+python-dotenv>=1.0.0
+
+# Google Gemini for deep property research
+google-genai>=1.0.0
+
+# PDF extraction
+pypdf>=3.0.0
+
+# HTTP requests
+requests>=2.0.0
+
+# TLS impersonation for Cloudflare-heavy sites (research scanner)
+curl_cffi>=0.5.0
+
+# HTML parsing for research scanner (CyberBackgroundChecks scraping)
+beautifulsoup4>=4.12.0
+
+# Note: Run 'playwright install chromium' after pip install

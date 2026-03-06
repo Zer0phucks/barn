@@ -1,0 +1,1245 @@
+{% extends "base.html" %}
+{% block title %}Search – BARN{% endblock %}
+
+{% block head %}
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 24px;
+    color: #111;
+  }
+
+  /* Base Typography & Spacing Options for Mobile */
+  @media (max-width: 768px) {
+    body {
+      margin: 12px;
+    }
+
+    h1 {
+      font-size: 20px;
+      margin-bottom: 12px;
+    }
+  }
+
+  h1 {
+    margin: 0 0 16px 0;
+  }
+
+  .controls {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    align-items: center;
+  }
+
+  input,
+  select {
+    padding: 6px 8px;
+  }
+
+  @media (max-width: 768px) {
+
+    .controls input,
+    .controls select,
+    .controls button {
+      width: 100% !important;
+      /* Override inline styles */
+    }
+  }
+
+  .table-container {
+    overflow-x: auto;
+    width: 100%;
+    margin-bottom: 16px;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 800px;
+    /* Ensure table doesn't squish too much */
+  }
+
+  th,
+  td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    font-size: 14px;
+  }
+
+  th {
+    background: #f4f4f4;
+    text-align: left;
+  }
+
+  .pager {
+    margin-top: 12px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .muted {
+    color: #666;
+  }
+
+  a {
+    color: #0a6a9a;
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: underline;
+  }
+
+  .power-on {
+    color: #27ae60;
+    font-weight: bold;
+  }
+
+  .power-off {
+    color: #c0392b;
+    font-weight: bold;
+  }
+
+  .power-unknown {
+    color: #7f8c8d;
+  }
+
+  /* Selection checkbox styles */
+  .select-checkbox {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+  }
+
+  .select-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* Floating action bar */
+  .floating-action-bar {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #2c3e50;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    display: none;
+    align-items: center;
+    gap: 16px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  @media (max-width: 600px) {
+    .floating-action-bar {
+      bottom: 0;
+      left: 0;
+      right: 0;
+      transform: none;
+      border-radius: 0;
+      width: 100%;
+      padding: 12px 16px;
+    }
+  }
+
+  .floating-action-bar.active {
+    display: flex;
+  }
+
+  .floating-action-bar .count {
+    font-weight: bold;
+  }
+
+  .floating-action-bar button {
+    background: #3498db;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .floating-action-bar button:hover {
+    background: #2980b9;
+  }
+
+  .floating-action-bar .clear-btn {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+  }
+
+  .floating-action-bar .clear-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .floating-action-bar .fav-btn {
+    background: #f39c12;
+  }
+
+  .floating-action-bar .fav-btn:hover {
+    background: #d68910;
+  }
+
+  .floating-action-bar .delete-btn {
+    background: #e74c3c;
+  }
+
+  .floating-action-bar .delete-btn:hover {
+    background: #c0392b;
+  }
+
+  .fav-filter {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .fav-filter input {
+    width: auto;
+  }
+
+  /* Research styles */
+  .research-btn {
+    background: #9b59b6;
+    color: white;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background 0.2s;
+  }
+
+  .research-btn:hover {
+    background: #8e44ad;
+  }
+
+  .research-btn:disabled {
+    background: #bdc3c7;
+    cursor: not-allowed;
+  }
+
+  .research-status {
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    display: inline-block;
+  }
+
+  .research-status.completed {
+    background: #d5f5e3;
+    color: #27ae60;
+  }
+
+  .research-status.pending {
+    background: #fef9e7;
+    color: #f39c12;
+  }
+
+  .research-status.in_progress {
+    background: #d6eaf8;
+    color: #3498db;
+  }
+
+  .research-status.failed {
+    background: #fadbd8;
+    color: #e74c3c;
+  }
+
+  .condition-score {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: bold;
+    font-size: 12px;
+  }
+
+  .condition-good {
+    background: #d5f5e3;
+    color: #27ae60;
+  }
+
+  .condition-fair {
+    background: #fef9e7;
+    color: #f39c12;
+  }
+
+  .condition-poor {
+    background: #fadbd8;
+    color: #c0392b;
+  }
+
+  .condition-none {
+    background: #eee;
+    color: #666;
+  }
+
+  .outreach-score {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: bold;
+    font-size: 12px;
+    color: white;
+  }
+
+  .outreach-high {
+    background: #27ae60;
+  }
+
+  .outreach-mid {
+    background: #f39c12;
+  }
+
+  .outreach-low {
+    background: #e74c3c;
+  }
+
+  .streetview-image {
+    max-width: 100%;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    border: 1px solid #ddd;
+  }
+
+  .report-link {
+    color: #9b59b6;
+    font-size: 12px;
+    margin-left: 4px;
+  }
+
+  /* Modal styles */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .modal-overlay.active {
+    display: flex;
+  }
+
+  .modal {
+    background: white;
+    border-radius: 8px;
+    max-width: 900px;
+    max-height: 80vh;
+    width: 90%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .modal-header {
+    padding: 16px;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .modal-header h3 {
+    margin: 0;
+  }
+
+  .modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #666;
+  }
+
+  .modal-body {
+    padding: 16px;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .modal-body pre {
+    white-space: pre-wrap;
+    font-family: inherit;
+    margin: 0;
+    line-height: 1.6;
+  }
+
+  /* Add to List modal */
+  .list-modal {
+    max-width: 400px;
+  }
+
+  .list-option {
+    display: block;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .list-option:hover {
+    background: #f8f9fa;
+  }
+
+  .list-option.selected {
+    border-color: #3498db;
+    background: #ebf5fb;
+  }
+
+  .new-list-form {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .new-list-form input {
+    flex: 1;
+  }
+
+  .modal-footer {
+    padding: 16px;
+    border-top: 1px solid #ddd;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .modal-footer button {
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  .modal-footer .btn-primary {
+    background: #3498db;
+    color: white;
+    border: none;
+  }
+
+  .modal-footer .btn-primary:hover {
+    background: #2980b9;
+  }
+
+  .modal-footer .btn-secondary {
+    background: white;
+    border: 1px solid #ddd;
+  }
+
+  .modal-footer .btn-secondary:hover {
+    background: #f8f9fa;
+  }
+
+  tr.selected-row {
+    background: #ebf5fb;
+  }
+
+
+
+  /* Mobile top navigation layout */
+  .top-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .user-badge {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  @media (max-width: 600px) {
+    .top-nav {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block sidenav %}
+<nav class="sidenav">
+  <div class="sidenav-label">Search</div>
+  <a href="/search" class="active">List View</a>
+  <a href="/map">Map View</a>
+  <a href="/lists">My Lists</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+  <form class="controls" method="get" id="filter-form">
+    <input type="text" name="q" placeholder="Search..." value="{{ q }}" />
+    <details class="dropdown" style="position: relative; display: inline-block;">
+      <summary
+        style="padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: white; user-select: none;">
+        Select Zips
+      </summary>
+      <div class="dropdown-content"
+        style="position: absolute; background: white; border: 1px solid #ccc; max-height: 200px; overflow-y: auto; padding: 10px; z-index: 1001; margin-top: 4px; border-radius: 4px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 4px; min-width: 120px;">
+        {% for zip in available_zips %}
+        <label
+          style="display: flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; font-weight: normal;">
+          <input type="checkbox" name="zip" value="{{ zip }}" {% if zip in zip_filter.split(',') %}checked{% endif %}
+            class="filter-zip-cb"> {{ zip }}
+        </label>
+        {% endfor %}
+      </div>
+    </details>
+    <input type="text" name="city" placeholder="City" value="{{ city_filter }}" style="width: 100px;" />
+    <input type="text" name="owner_name" placeholder="Owner Name" value="{{ owner_name_filter }}"
+      style="width: 150px;" />
+    <select name="power">
+      <option value="" {% if not power_filter %}selected{% endif %}>All Power</option>
+      <option value="on" {% if power_filter=="on" %}selected{% endif %}>Power ON</option>
+      <option value="off" {% if power_filter=="off" %}selected{% endif %}>Power OFF</option>
+      <option value="unknown" {% if power_filter=="unknown" %}selected{% endif %}>Unknown</option>
+    </select>
+    <label class="fav-filter">
+      <input type="checkbox" name="vpt" value="1" {% if vpt_filter=="1" %}checked{% endif %} />
+      VPT only
+    </label>
+    <label class="fav-filter">
+      <input type="checkbox" name="delinquent" value="1" {% if delinquent_filter=="1" %}checked{% endif %} />
+      Delinquent
+    </label>
+    <label class="fav-filter">
+      <input type="checkbox" name="outofstate" value="1" {% if outofstate_filter=="1" %}checked{% endif %} />
+      Out of State
+    </label>
+    <select name="sort">
+      <option value="location_of_property" {% if sort=="location_of_property" %}selected{% endif %}>Location
+      </option>
+      <option value="city" {% if sort=="city" %}selected{% endif %}>City</option>
+      <option value="apn" {% if sort=="apn" %}selected{% endif %}>APN</option>
+      <option value="parcel_number" {% if sort=="parcel_number" %}selected{% endif %}>Parcel #</option>
+      <option value="tracer_number" {% if sort=="tracer_number" %}selected{% endif %}>Tracer #</option>
+      <option value="tax_year" {% if sort=="tax_year" %}selected{% endif %}>Tax Year</option>
+      <option value="last_payment" {% if sort=="last_payment" %}selected{% endif %}>Last Payment</option>
+      <option value="delinquent" {% if sort=="delinquent" %}selected{% endif %}>Delinquent</option>
+      <option value="has_vpt" {% if sort=="has_vpt" %}selected{% endif %}>VPT</option>
+      <option value="power_status" {% if sort=="power_status" %}selected{% endif %}>Power</option>
+      <option value="condition_score" {% if sort=="condition_score" %}selected{% endif %}>Condition</option>
+      <option value="primary_resident_age" {% if sort=="primary_resident_age" %}selected{% endif %}>Resident Age
+      </option>
+      <option value="deceased_count" {% if sort=="deceased_count" %}selected{% endif %}>Deceased Count</option>
+      <option value="outreach_score" {% if sort=="outreach_score" %}selected{% endif %}>Outreach Score</option>
+    </select>
+    <select name="condition">
+      <option value="" {% if not condition_filter %}selected{% endif %}>All Condition</option>
+      <option value="good" {% if condition_filter=="good" %}selected{% endif %}>Good (1-3)</option>
+      <option value="fair" {% if condition_filter=="fair" %}selected{% endif %}>Fair (4-6)</option>
+      <option value="poor" {% if condition_filter=="poor" %}selected{% endif %}>Poor (7-10)</option>
+      <option value="unscanned" {% if condition_filter=="unscanned" %}selected{% endif %}>Not Scanned</option>
+    </select>
+    <select name="research">
+      <option value="" {% if not research_filter %}selected{% endif %}>All Research</option>
+      <option value="completed" {% if research_filter=="completed" %}selected{% endif %}>Researched</option>
+      <option value="unchecked" {% if research_filter=="unchecked" %}selected{% endif %}>Not Researched</option>
+      <option value="in_progress" {% if research_filter=="in_progress" %}selected{% endif %}>In Progress</option>
+      <option value="failed" {% if research_filter=="failed" %}selected{% endif %}>Failed</option>
+      <option value="pending" {% if research_filter=="pending" %}selected{% endif %}>Pending</option>
+    </select>
+    <select name="outreach_stage">
+      <option value="" {% if not outreach_stage_filter %}selected{% endif %}>All Stages</option>
+      <option value="Identified" {% if outreach_stage_filter=="Identified" %}selected{% endif %}>Identified</option>
+      <option value="Qualified" {% if outreach_stage_filter=="Qualified" %}selected{% endif %}>Qualified</option>
+      <option value="Outreach Ready" {% if outreach_stage_filter=="Outreach Ready" %}selected{% endif %}>Outreach Ready</option>
+      <option value="Contacted" {% if outreach_stage_filter=="Contacted" %}selected{% endif %}>Contacted</option>
+      <option value="Responding" {% if outreach_stage_filter=="Responding" %}selected{% endif %}>Responding</option>
+      <option value="Negotiating" {% if outreach_stage_filter=="Negotiating" %}selected{% endif %}>Negotiating</option>
+      <option value="Partnered" {% if outreach_stage_filter=="Partnered" %}selected{% endif %}>Partnered</option>
+      <option value="Declined" {% if outreach_stage_filter=="Declined" %}selected{% endif %}>Declined</option>
+      <option value="No Response" {% if outreach_stage_filter=="No Response" %}selected{% endif %}>No Response</option>
+    </select>
+    <select name="order">
+      <option value="asc" {% if order=="asc" %}selected{% endif %}>Asc</option>
+      <option value="desc" {% if order=="desc" %}selected{% endif %}>Desc</option>
+    </select>
+    <select name="page_size">
+      <option value="25" {% if page_size==25 %}selected{% endif %}>25</option>
+      <option value="50" {% if page_size==50 %}selected{% endif %}>50</option>
+      <option value="100" {% if page_size==100 %}selected{% endif %}>100</option>
+      <option value="200" {% if page_size==200 %}selected{% endif %}>200</option>
+    </select>
+    <button type="submit">Apply</button>
+    <button type="button" class="btn-secondary" onclick="clearAllFilters()">Clear All</button>
+    <button type="button" class="btn-secondary" onclick="createListFromFilters()">Create List from Filters</button>
+    <span class="muted">Total: {{ total }}</span>
+  </form>
+
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 40px;">
+            <div class="select-header">
+              <input type="checkbox" class="select-checkbox" id="select-all-page"
+                onchange="togglePageSelection(this.checked)" title="Select all on this page" />
+              <button type="button" onclick="selectAllPages()"
+                style="background: none; border: none; cursor: pointer; font-size: 12px; color: #3498db; padding: 0;"
+                title="Select all {{ total }} properties">All</button>
+            </div>
+          </th>
+          <th>City</th>
+          <th>Location</th>
+          <th>APN</th>
+          <th>VPT</th>
+          <th>Delinquent</th>
+          <th>Power</th>
+          <th>Tax Year</th>
+          <th>Last Payment</th>
+          <th>Owner Name</th>
+          <th>Occupancy</th>
+          <th>Ownership</th>
+          <th>Primary Resident</th>
+          <th>Resident Age</th>
+          <th>Resident Phone</th>
+          <th>Deceased</th>
+          <th>Mailing Address</th>
+          <th>Maps</th>
+          <th>Bill</th>
+          <th>Condition</th>
+          <th>Score</th>
+          <th>Research</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr id="row-{{ r.apn|replace('/', '_') }}">
+          <td>
+            <input type="checkbox" class="select-checkbox row-checkbox" data-apn="{{ r.apn }}"
+              onchange="toggleRowSelection('{{ r.apn }}', this.checked)" />
+          </td>
+          <td>{{ r.city }}</td>
+          <td>
+            <a href="{{ url_for('property_detail', apn=r.apn, return_to=return_to_path) }}" title="Open Property Workspace">
+              {{ r.location_of_property }}
+            </a>
+            {% if r.property_search_url %}
+            <div>
+              <a href="{{ r.property_search_url }}" target="_blank" rel="noopener" title="Search Owner"
+                style="font-size: 12px;">Owner Search</a>
+            </div>
+            {% endif %}
+          </td>
+          <td>{{ r.apn }}</td>
+          <td class="{% if r.has_vpt == 'Yes' %}power-off{% endif %}">{{ r.has_vpt }}</td>
+          <td class="{% if r.delinquent == 'Yes' %}power-off{% endif %}">{{ r.delinquent }}</td>
+          <td
+            class="{% if r.power_status == 'ON' %}power-on{% elif r.power_status == 'OFF' %}power-off{% else %}power-unknown{% endif %}">
+            {{ r.power_status or '-' }}</td>
+          <td>{{ r.tax_year }}</td>
+          <td>{{ r.last_payment }}</td>
+          <td>{{ r.owner_name or "-" }}</td>
+          <td>{{ r.prop_occupancy_type or "-" }}</td>
+          <td>{{ r.prop_ownership_type or "-" }}</td>
+          <td>{{ r.primary_resident_name or "-" }}</td>
+          <td>{{ r.primary_resident_age or "-" }}</td>
+          <td>{{ r.primary_resident_phone_number or "-" }}</td>
+          <td>{% if r.deceased_count is not none %}{{ r.deceased_count }}{% else %}-{% endif %}</td>
+          <td>
+            {% if r.mailing_search_url %}
+            <a href="{{ r.mailing_search_url }}" target="_blank" rel="noopener" title="Search Owner">{{ r.mailing_address }}</a>
+            {% else %}
+            {{ r.mailing_address }}
+            {% endif %}
+          </td>
+          <td>
+            {% if r.maps_url %}
+            <a href="{{ r.maps_url }}" target="_blank" rel="noopener">Map</a>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.bill_url %}
+            <a href="{{ r.bill_url }}" target="_blank" rel="noopener">Bill</a>
+            {% else %}
+            {{ r.pdf_file }}
+            {% endif %}
+          </td>
+          <td>
+            {% if r.condition_score is not none %}
+            {% set score = r.condition_score %}
+            <span
+              class="condition-score {% if score <= 3.0 %}condition-good{% elif score <= 6.0 %}condition-fair{% else %}condition-poor{% endif %}">
+              {{ "%.1f"|format(score) }}
+            </span>
+            <button class="research-btn" style="padding: 2px 6px; font-size: 11px; margin-left: 4px;"
+              onclick="viewCondition('{{ r.apn }}')" title="View details">📷</button>
+            {% else %}
+            <button class="research-btn" style="padding: 2px 6px; font-size: 11px;"
+              onclick="scanCondition('{{ r.apn }}')">🔍 Scan</button>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.outreach_score is not none %}
+            {% set oscore = r.outreach_score %}
+            <span class="outreach-score {% if oscore >= 70 %}outreach-high{% elif oscore >= 50 %}outreach-mid{% else %}outreach-low{% endif %}">
+              {{ oscore }}
+            </span>
+            {% else %}
+            <span class="muted">-</span>
+            {% endif %}
+          </td>
+          <td>
+            <button class="research-btn" onclick="startResearch('{{ r.apn }}')" id="research-btn-{{ loop.index }}">🔍
+              Research</button>
+            <span class="research-status" id="research-status-{{ r.apn|replace('/', '_') }}"
+              style="display: none;"></span>
+            <a href="#" class="report-link" id="report-link-{{ r.apn|replace('/', '_') }}" style="display: none;"
+              onclick="viewReport('{{ r.apn }}'); return false;">View Report</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pager">
+    {% if page > 1 %}
+    <a
+      href="?q={{ q }}&zip={{ zip_filter }}&city={{ city_filter }}&owner_name={{ owner_name_filter }}&occupancy_type={{ occupancy_filter }}&ownership_type={{ ownership_filter }}&primary_resident_age={{ primary_resident_age_filter }}&deceased_count={{ deceased_count_filter }}&power={{ power_filter }}&vpt={{ vpt_filter }}&delinquent={{ delinquent_filter }}&condition={{ condition_filter }}&outofstate={{ outofstate_filter }}&research={{ research_filter }}&outreach_stage={{ outreach_stage_filter }}&sort={{ sort }}&order={{ order }}&page_size={{ page_size }}&page={{ page - 1 }}">Prev</a>
+    {% endif %}
+    <span class="muted">Page {{ page }} of {{ total_pages }}</span>
+    {% if page < total_pages %} <a
+      href="?q={{ q }}&zip={{ zip_filter }}&city={{ city_filter }}&owner_name={{ owner_name_filter }}&occupancy_type={{ occupancy_filter }}&ownership_type={{ ownership_filter }}&primary_resident_age={{ primary_resident_age_filter }}&deceased_count={{ deceased_count_filter }}&power={{ power_filter }}&vpt={{ vpt_filter }}&delinquent={{ delinquent_filter }}&condition={{ condition_filter }}&outofstate={{ outofstate_filter }}&research={{ research_filter }}&outreach_stage={{ outreach_stage_filter }}&sort={{ sort }}&order={{ order }}&page_size={{ page_size }}&page={{ page + 1 }}">
+      Next</a>
+      {% endif %}
+  </div>
+
+  <!-- Floating Action Bar -->
+  <div class="floating-action-bar" id="floating-action-bar">
+    <span class="count"><span id="selected-count">0</span> selected</span>
+    <button onclick="openAddToListModal()">
+      <span>+</span> Add to List
+    </button>
+    <button class="fav-btn" onclick="addFavoritesBulk()">
+      &#9733; Favorites
+    </button>
+    <button class="delete-btn" onclick="deleteSelectedBulk()">
+      &#128465; Delete
+    </button>
+    <button class="clear-btn" onclick="clearSelection()">Clear</button>
+  </div>
+
+  <!-- Add to List Modal -->
+  <div class="modal-overlay" id="list-modal" onclick="closeListModal(event)">
+    <div class="modal list-modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h3>Add to List</h3>
+        <button class="modal-close" onclick="closeListModalDirect()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="new-list-form">
+          <input type="text" id="new-list-name" placeholder="New list name..." />
+          <button class="research-btn" onclick="createNewList()">Create</button>
+        </div>
+        <div id="lists-container">
+          <p class="muted">Loading lists...</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeListModalDirect()">Cancel</button>
+        <button class="btn-primary" id="add-to-list-btn" onclick="addToSelectedList()" disabled>Add to List</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Report Modal -->
+  <div class="modal-overlay" id="report-modal" onclick="closeModal(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h3 id="modal-title">Property Research Report</h3>
+        <button class="modal-close" onclick="closeReportModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <img id="modal-streetview" class="streetview-image" style="display: none;" alt="Street View">
+        <pre id="modal-content"></pre>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Fetch the full filtered APN list (all pages) for prev/next navigation in property detail view
+  fetch("/api/apn_list" + window.location.search)
+    .then(function(r) { return r.json(); })
+    .then(function(list) {
+      try { localStorage.setItem("barn_apn_list", JSON.stringify(list)); } catch (e) {}
+    })
+    .catch(function() {});
+
+  // Selection state - persisted in sessionStorage
+  let selectedApns = new Set(JSON.parse(sessionStorage.getItem('selectedApns') || '[]'));
+  let selectAllMode = sessionStorage.getItem('selectAllMode') === 'true';
+  let totalProperties = Number('{{ total }}');
+
+  // Initialize page state
+  document.addEventListener('DOMContentLoaded', () => {
+    // Filter details state
+    const filterDetails = document.getElementById('filter-details');
+    const isMobile = window.innerWidth <= 768;
+    const isFilterOpen = sessionStorage.getItem('filterOpen');
+
+    if (isFilterOpen === 'false') {
+      filterDetails.removeAttribute('open');
+    } else if (isFilterOpen === 'true') {
+      filterDetails.setAttribute('open', '');
+    } else if (isMobile) {
+      // Default to closed on mobile
+      filterDetails.removeAttribute('open');
+    }
+
+    filterDetails.addEventListener('toggle', () => {
+      sessionStorage.setItem('filterOpen', filterDetails.open);
+    });
+
+    updateSelectionUI();
+    loadLists();
+
+    // Check research status for all visible rows
+    document.querySelectorAll('[id^="research-status-"]').forEach(el => {
+      const apn = el.id.replace('research-status-', '').replace(/_/g, '/');
+      checkResearchStatus(apn);
+    });
+  });
+
+  function saveSelection() {
+    sessionStorage.setItem('selectedApns', JSON.stringify([...selectedApns]));
+    sessionStorage.setItem('selectAllMode', selectAllMode);
+  }
+
+  function updateSelectionUI() {
+    // Update checkboxes on page
+    document.querySelectorAll('.row-checkbox').forEach(cb => {
+      const apn = cb.dataset.apn;
+      const isSelected = selectAllMode || selectedApns.has(apn);
+      cb.checked = isSelected;
+      const row = cb.closest('tr');
+      if (isSelected) {
+        row.classList.add('selected-row');
+      } else {
+        row.classList.remove('selected-row');
+      }
+    });
+
+    // Update select-all checkbox
+    const selectAllCb = document.getElementById('select-all-page');
+    const pageCheckboxes = document.querySelectorAll('.row-checkbox');
+    const allChecked = [...pageCheckboxes].every(cb => cb.checked);
+    selectAllCb.checked = allChecked;
+
+    // Update floating bar
+    const count = selectAllMode ? totalProperties : selectedApns.size;
+    document.getElementById('selected-count').textContent = count;
+    const bar = document.getElementById('floating-action-bar');
+    if (count > 0) {
+      bar.classList.add('active');
+    } else {
+      bar.classList.remove('active');
+    }
+  }
+
+  function toggleRowSelection(apn, checked) {
+    if (selectAllMode) {
+      // Exit select-all mode when manually toggling
+      selectAllMode = false;
+      // Add all visible to set, then toggle this one
+      document.querySelectorAll('.row-checkbox').forEach(cb => {
+        if (cb.dataset.apn !== apn) {
+          selectedApns.add(cb.dataset.apn);
+        }
+      });
+    }
+
+    if (checked) {
+      selectedApns.add(apn);
+    } else {
+      selectedApns.delete(apn);
+    }
+    saveSelection();
+    updateSelectionUI();
+  }
+
+  function togglePageSelection(checked) {
+    document.querySelectorAll('.row-checkbox').forEach(cb => {
+      const apn = cb.dataset.apn;
+      if (checked) {
+        selectedApns.add(apn);
+      } else {
+        selectedApns.delete(apn);
+      }
+    });
+    if (!checked) {
+      selectAllMode = false;
+    }
+    saveSelection();
+    updateSelectionUI();
+  }
+
+  function selectAllPages() {
+    selectAllMode = true;
+    selectedApns.clear();
+    saveSelection();
+    updateSelectionUI();
+    alert(`Selected all ${totalProperties} properties across all pages.`);
+  }
+
+  function createListFromFilters() {
+    const listName = prompt("Enter a name for the new list:");
+    if (!listName || listName.trim() === '') return;
+
+    fetch('/api/lists', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: listName })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (!data.success) {
+          alert('Error creating list: ' + data.error);
+          return;
+        }
+        const newListId = data.data.id;
+        const currentFilters = new URLSearchParams(window.location.search);
+        fetch(`/api/lists/${newListId}/add-properties`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apns: 'all',
+            filters: Object.fromEntries(currentFilters)
+          })
+        })
+          .then(res => res.json())
+          .then(data2 => {
+            if (data2.success) {
+              alert(`Successfully created list and added ${data2.count} properties.`);
+              window.location.href = `/lists/${newListId}`;
+            } else {
+              alert('Error adding properties: ' + (data2.error || 'Unknown'));
+            }
+          });
+      })
+      .catch(err => alert("Error: " + err.message));
+  }
+
+  function clearAllFilters() {
+    window.location.href = window.location.pathname;
+  }
+
+  function clearSelection() {
+    selectedApns.clear();
+    selectAllMode = false;
+    saveSelection();
+    updateSelectionUI();
+  }
+
+  function addFavoritesBulk() {
+    if (selectAllMode) {
+      alert('Cannot bulk-favorite all pages at once. Please select specific properties.');
+      return;
+    }
+    const apns = [...selectedApns];
+    if (!apns.length) return;
+    fetch('/api/favorites/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apns })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'ok') {
+          alert(`Added ${data.added} propert${data.added === 1 ? 'y' : 'ies'} to Favorites.`);
+          clearSelection();
+        } else {
+          alert('Error: ' + data.message);
+        }
+      })
+      .catch(err => alert('Error: ' + err.message));
+  }
+
+  function deleteSelectedBulk() {
+    if (selectAllMode) {
+      alert('Cannot bulk-delete all pages at once. Please select specific properties.');
+      return;
+    }
+    const apns = [...selectedApns];
+    if (!apns.length) return;
+    if (!confirm(`Permanently delete ${apns.length} propert${apns.length === 1 ? 'y' : 'ies'}? This cannot be undone.`)) return;
+    fetch('/api/property/bulk-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apns })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'ok') {
+          clearSelection();
+          // Remove deleted rows from the table without a full reload
+          apns.forEach(apn => {
+            const row = document.getElementById('row-' + apn.replace(/\//g, '_'));
+            if (row) row.remove();
+          });
+          alert(`Deleted ${data.deleted} propert${data.deleted === 1 ? 'y' : 'ies'}.`);
+        } else {
+          alert('Error: ' + data.message);
+        }
+      })
+      .catch(err => alert('Error: ' + err.message));
+  }
+
+  // Lists functionality
+  let availableLists = [];
+  let selectedListId = null;
+
+  function loadLists() {
+    fetch('/api/lists')
+      .then(res => res.json())
+      .then(lists => {
+        availableLists = lists;
+      })
+      .catch(err => console.error('Error loading lists:', err));
+  }
+
+  function openAddToListModal() {
+    document.getElementById('list-modal').classList.add('active');
+    renderListOptions();
+  }
+
+  function closeListModal(event) {
+    if (event.target.classList.contains('modal-overlay')) {
+      closeListModalDirect();
+    }
+  }
+
+  function closeListModalDirect() {
+    document.getElementById('list-modal').classList.remove('active');
+    selectedListId = null;
+  }
+
+  function renderListOptions() {
+    const container = document.getElementById('lists-container');
+    if (availableLists.length === 0) {
+      container.innerHTML = '<p class="muted">No lists yet. Create one above!</p>';
+      return;
+    }
+
+    container.innerHTML = availableLists.map(list => `
+      <div class="list-option ${selectedListId === list.id ? 'selected' : ''}"
+        onclick="selectList(${list.id})">
+        <strong>${list.name}</strong>
+        <span class="muted" style="margin-left: 8px;">${list.property_count} properties</span>
+      </div>
+    `).join('');
+  }
+
+  function selectList(id) {
+    selectedListId = id;
+    renderListOptions();
+    document.getElementById('add-to-list-btn').disabled = false;
+  }
+
+  function createNewList() {
+    const nameInput = document.getElementById('new-list-name');
+    const name = nameInput.value.trim();
+    if (!name) {
+      alert('Please enter a list name');
+      return;
+    }
+
+    fetch('/api/lists', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          availableLists.push(data.data);
+          selectedListId = data.data.id;
+          nameInput.value = '';
+          renderListOptions();
+          document.getElementById('add-to-list-btn').disabled = false;
+        } else {
+          alert('Error: ' + data.error);
+        }
+      })
+      .catch(err => alert('Error creating list: ' + err.message));
+  }
+
+  function addToSelectedList() {
+    if (!selectedListId) return;
+
+    const apnsToAdd = selectAllMode ? 'all' : [...selectedApns];
+    const currentFilters = new URLSearchParams(window.location.search);
+
+    fetch(`/api/lists/${selectedListId}/add-properties`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apns: apnsToAdd,
+        filters: selectAllMode ? Object.fromEntries(currentFilters) : null
+      })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          alert(`Added ${data.count} properties to list!`);
+          closeListModalDirect();
+          clearSelection();
+          loadLists();
+        } else {
+          alert('Error: ' + data.error);
+        }
+      })
+      .catch(err => alert('Error adding to list: ' + err.message));
+  }
+
+  // Research functions
+  function startResearch(apn) {
+    fetch('/api/research/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apns: [apn] })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'ok') {
+          alert('Research started for ' + apn + '. Check the Admin panel for progress.');
+          checkResearchStatus(apn);
+        } else {
+          alert('Error: ' + data.message);
+        }
+      })
+      .catch(err => alert('Error starting research: ' + err.message));
+  }
+
+  function checkResearchStatus(apn) {
+    fetch(`/api/research/status/${encodeURIComponent(apn)}`)
+      .then(res => res.json())
+      .then(data => {
+        const safeApn = apn.replace(/\//g, '_');
+        const statusEl = document.getElementById(`research-status-${safeApn}`);
+        const linkEl = document.getElementById(`report-link-${safeApn}`);
+
+        if (statusEl && data.status && data.status !== 'none') {
+          statusEl.style.display = 'inline-block';
+          statusEl.className = `research-status ${data.status}`;
+          statusEl.textContent = data.status.replace('_', ' ');
+
+          if (data.has_report && linkEl) {
+            linkEl.style.display = 'inline';
+          }
+        }
+      })
+      .catch(err => console.error('Error checking status:', err));
+  }
+
+  function viewReport(apn) {
+    document.getElementById('modal-title').textContent = 'Property Research Report';
+    document.getElementById('modal-content').textContent = 'Loading...';
+    document.getElementById('modal-streetview').style.display = 'none';
+    document.getElementById('report-modal').classList.add('active');
+
+    const streetviewImg = document.getElementById('modal-streetview');
+    streetviewImg.src = `/api/streetview/${encodeURIComponent(apn)}`;
+    streetviewImg.onload = () => { streetviewImg.style.display = 'block'; };
+    streetviewImg.onerror = () => { streetviewImg.style.display = 'none'; };
+
+    fetch(`/api/research/report/${encodeURIComponent(apn)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.report) {
+          document.getElementById('modal-content').textContent = data.report;
+        } else {
+          document.getElementById('modal-content').textContent = 'Report not found.';
+        }
+      })
+      .catch(err => {
+        document.getElementById('modal-content').textContent = 'Error loading report: ' + err.message;
+      });
+  }
+
+  // Condition scanning functions
+  function scanCondition(apn) {
+    fetch('/api/condition/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apns: [apn] })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'ok') {
+          alert('Condition scan started for ' + apn + '. Refresh the page in a few seconds.');
+        } else {
+          alert('Error: ' + data.message);
+        }
+      })
+      .catch(err => alert('Error starting condition scan: ' + err.message));
+  }
+
+  function viewCondition(apn) {
+    document.getElementById('modal-title').textContent = 'Property Condition Report';
+    document.getElementById('modal-content').textContent = 'Loading...';
+    document.getElementById('report-modal').classList.add('active');
+
+    const streetviewImg = document.getElementById('modal-streetview');
+    streetviewImg.src = `/api/streetview/${encodeURIComponent(apn)}`;
+    streetviewImg.onload = () => { streetviewImg.style.display = 'block'; };
+    streetviewImg.onerror = () => { streetviewImg.style.display = 'none'; };
+
+    fetch(`/api/condition/score/${encodeURIComponent(apn)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.score !== undefined) {
+          let content = `Condition Score: ${data.score.toFixed(1)} / 10.0\n\n`;
+          content += `Updated: ${data.updated_at || 'N/A'}\n\n`;
+          content += `${data.notes || 'No detailed notes available.'}`;
+          document.getElementById('modal-content').textContent = content;
+        } else {
+          document.getElementById('modal-content').textContent = 'Condition data not found.';
+        }
+      })
+      .catch(err => {
+        document.getElementById('modal-content').textContent = 'Error loading condition: ' + err.message;
+      });
+  }
+
+  function closeReportModal() {
+    document.getElementById('report-modal').classList.remove('active');
+    document.getElementById('modal-streetview').style.display = 'none';
+  }
+
+  function closeModal(event) {
+    if (event.target.classList.contains('modal-overlay')) {
+      closeReportModal();
+    }
+  }
+</script>
+{% endblock %}

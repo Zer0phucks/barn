@@ -1,0 +1,180 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    --background: 45 40% 97%;
+    --foreground: 150 30% 12%;
+
+    --card: 45 35% 95%;
+    --card-foreground: 150 30% 12%;
+
+    --popover: 45 40% 97%;
+    --popover-foreground: 150 30% 12%;
+
+    --primary: 145 55% 32%;
+    --primary-foreground: 45 40% 97%;
+
+    --secondary: 210 70% 45%;
+    --secondary-foreground: 45 40% 97%;
+
+    --muted: 45 20% 90%;
+    --muted-foreground: 150 10% 40%;
+
+    --accent: 38 90% 50%;
+    --accent-foreground: 150 30% 12%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 45 20% 85%;
+    --input: 45 20% 85%;
+    --ring: 145 55% 32%;
+
+    --radius: 0.75rem;
+
+    /* Custom tokens — derived from logo */
+    --barn-green: 145 55% 32%;
+    --barn-green-light: 145 40% 92%;
+    --barn-gold: 38 90% 50%;
+    --barn-gold-light: 38 60% 90%;
+    --barn-red: 12 75% 48%;
+    --barn-red-light: 12 55% 90%;
+    --barn-blue: 210 70% 45%;
+    --barn-blue-light: 210 50% 92%;
+    --cream: 45 40% 97%;
+    --charcoal: 150 30% 12%;
+
+    --font-display: 'Playfair Display', serif;
+    --font-body: 'Source Sans 3', sans-serif;
+
+    --shadow-soft: 0 4px 20px -4px hsl(150 30% 12% / 0.08);
+    --shadow-elevated: 0 12px 40px -8px hsl(150 30% 12% / 0.12);
+    --shadow-glow: 0 0 40px hsl(var(--primary) / 0.2);
+
+    --gradient-hero: linear-gradient(135deg, hsl(145 55% 32% / 0.1) 0%, hsl(38 90% 50% / 0.1) 100%);
+    --gradient-warm: linear-gradient(180deg, hsl(45 40% 97%) 0%, hsl(45 35% 94%) 100%);
+    --gradient-cta: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(145 50% 38%) 100%);
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 210 70% 45%;
+  }
+
+  .dark {
+    --background: 150 20% 8%;
+    --foreground: 45 30% 95%;
+
+    --card: 150 18% 12%;
+    --card-foreground: 45 30% 95%;
+
+    --popover: 150 18% 12%;
+    --popover-foreground: 45 30% 95%;
+
+    --primary: 145 50% 42%;
+    --primary-foreground: 150 20% 8%;
+
+    --secondary: 210 65% 55%;
+    --secondary-foreground: 150 20% 8%;
+
+    --muted: 150 15% 18%;
+    --muted-foreground: 45 10% 60%;
+
+    --accent: 38 85% 55%;
+    --accent-foreground: 150 20% 8%;
+
+    --border: 150 15% 18%;
+    --input: 150 15% 18%;
+    --ring: 145 50% 42%;
+
+    --barn-green: 145 50% 42%;
+    --barn-green-light: 145 30% 16%;
+    --barn-gold: 38 85% 55%;
+    --barn-gold-light: 38 50% 16%;
+    --barn-red: 12 70% 55%;
+    --barn-red-light: 12 45% 16%;
+    --barn-blue: 210 65% 55%;
+    --barn-blue-light: 210 40% 16%;
+    --cream: 150 20% 8%;
+    --charcoal: 45 30% 95%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  .font-body {
+    font-family: var(--font-body);
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, hsl(var(--barn-green)) 0%, hsl(var(--barn-blue)) 100%);
+  }
+
+  .bg-gradient-hero {
+    background: var(--gradient-hero);
+  }
+
+  .bg-gradient-warm {
+    background: var(--gradient-warm);
+  }
+
+  .bg-gradient-cta {
+    background: var(--gradient-cta);
+  }
+
+  .shadow-soft {
+    box-shadow: var(--shadow-soft);
+  }
+
+  .shadow-elevated {
+    box-shadow: var(--shadow-elevated);
+  }
+
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+}
+
+@layer components {
+  .section-padding {
+    @apply px-6 py-20 md:px-12 lg:px-20 lg:py-28;
+  }
+
+  .container-narrow {
+    @apply max-w-4xl mx-auto;
+  }
+
+  .container-wide {
+    @apply max-w-7xl mx-auto;
+  }
+}

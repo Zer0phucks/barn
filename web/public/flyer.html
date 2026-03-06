@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BARN - Bay Area Renewal Network Postcard</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Open+Sans:wght@400;600;700&display=swap');
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    @page {
+      size: 6in 4in;
+      margin: 0;
+    }
+
+    body {
+      font-family: 'Open Sans', sans-serif;
+      background: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+      gap: 30px;
+    }
+
+    .page-label {
+      font-size: 14px;
+      color: #666;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .postcard {
+      width: 6in;
+      height: 4in;
+      background: white;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      overflow: hidden;
+    }
+
+    @media print {
+      body {
+        background: white;
+        padding: 0;
+        gap: 0;
+      }
+      .page-label {
+        display: none;
+      }
+      .postcard {
+        box-shadow: none;
+        page-break-after: always;
+      }
+      .postcard:last-child {
+        page-break-after: avoid;
+      }
+    }
+
+    /* ============ FRONT SIDE ============ */
+    .front {
+      background: linear-gradient(135deg, #ffffff 0%, #f8f9f5 100%);
+      display: flex;
+      flex-direction: column;
+      padding: 0.25in;
+      position: relative;
+    }
+
+    .front-header {
+      display: flex;
+      align-items: center;
+      gap: 0.15in;
+      margin-bottom: 0.15in;
+    }
+
+    .logo {
+      width: 0.9in;
+      height: 0.9in;
+      object-fit: contain;
+    }
+
+    .brand {
+      flex: 1;
+    }
+
+    .brand-name {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #1a6b35;
+      letter-spacing: 0.08em;
+    }
+
+    .brand-tagline {
+      font-size: 0.55rem;
+      color: #555;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+    }
+
+    .front-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      text-align: center;
+      padding: 0 0.15in;
+    }
+
+    .front-main h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.15rem;
+      color: #1a1a1a;
+      line-height: 1.3;
+      margin-bottom: 0.1in;
+    }
+
+    .front-main h1 span {
+      color: #1a6b35;
+    }
+
+    .front-main p {
+      font-size: 0.6rem;
+      color: #555;
+      line-height: 1.5;
+    }
+
+    .cta-banner {
+      background: linear-gradient(135deg, #1a6b35 0%, #145228 100%);
+      color: white;
+      text-align: center;
+      padding: 0.12in 0.2in;
+      border-radius: 6px;
+      margin-top: 0.12in;
+    }
+
+    .cta-banner p {
+      font-size: 0.55rem;
+      margin-bottom: 0.05in;
+      color: rgba(255,255,255,0.9);
+    }
+
+    .cta-banner .highlight {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: #f5b942;
+    }
+
+    .front-footer {
+      display: flex;
+      justify-content: center;
+      gap: 0.3in;
+      padding-top: 0.1in;
+      border-top: 1px solid #e5e5e5;
+      margin-top: 0.1in;
+    }
+
+    .front-footer .contact-item {
+      text-align: center;
+      font-size: 0.5rem;
+    }
+
+    .front-footer .contact-value {
+      font-weight: 700;
+      color: #1a6b35;
+      font-size: 0.55rem;
+    }
+
+    /* ============ BACK SIDE ============ */
+    .back {
+      background: white;
+      display: flex;
+      flex-direction: column;
+      padding: 0.2in;
+    }
+
+    .back-header {
+      text-align: center;
+      padding-bottom: 0.1in;
+      border-bottom: 2px solid #1a6b35;
+      margin-bottom: 0.12in;
+    }
+
+    .back-header h2 {
+      font-family: 'Playfair Display', serif;
+      font-size: 0.85rem;
+      color: #1a6b35;
+    }
+
+    .what-we-do {
+      background: #f8f9f5;
+      border-left: 3px solid #f5b942;
+      padding: 0.1in 0.12in;
+      margin-bottom: 0.1in;
+    }
+
+    .what-we-do p {
+      font-size: 0.5rem;
+      color: #444;
+      line-height: 1.5;
+    }
+
+    .steps {
+      display: flex;
+      gap: 0.1in;
+      margin-bottom: 0.1in;
+    }
+
+    .step {
+      flex: 1;
+      text-align: center;
+      padding: 0.08in;
+      background: #f0f7f2;
+      border-radius: 6px;
+    }
+
+    .step-num {
+      width: 20px;
+      height: 20px;
+      background: #1a6b35;
+      color: white;
+      border-radius: 50%;
+      font-size: 0.5rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 0.04in;
+    }
+
+    .step h4 {
+      font-size: 0.45rem;
+      color: #1a1a1a;
+      margin-bottom: 0.02in;
+    }
+
+    .step p {
+      font-size: 0.38rem;
+      color: #666;
+      line-height: 1.3;
+    }
+
+    .back-contact {
+      background: #1a6b35;
+      color: white;
+      padding: 0.1in 0.15in;
+      border-radius: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: auto;
+    }
+
+    .back-contact-info {
+      display: flex;
+      gap: 0.25in;
+    }
+
+    .back-contact-item {
+      font-size: 0.45rem;
+    }
+
+    .back-contact-item .label {
+      font-size: 0.35rem;
+      opacity: 0.8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .back-contact-item .value {
+      font-weight: 700;
+      font-size: 0.5rem;
+    }
+
+    .back-website {
+      text-align: right;
+    }
+
+    .back-website .url {
+      font-size: 0.6rem;
+      font-weight: 700;
+      color: #f5b942;
+    }
+
+    .back-website .nonprofit {
+      font-size: 0.35rem;
+      opacity: 0.7;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- FRONT SIDE -->
+  <div class="page-label">Front Side</div>
+  <div class="postcard front">
+    <div class="front-header">
+      <img src="barn-logo.png" alt="BARN Logo" class="logo">
+      <div class="brand">
+        <div class="brand-name">Bay Area Renewal Network</div>
+        <div class="brand-tagline">Renewing Homes. Restoring Hope.</div>
+      </div>
+    </div>
+
+    <div class="front-main">
+      <h1>Know of a <span>Vacant Property</span><br>in Your Neighborhood?</h1>
+      <p>Together, we can transform abandoned houses into homes for families in need while revitalizing our community.</p>
+    </div>
+
+    <div class="cta-banner">
+      <p>Your tip could help a family find a home</p>
+      <div class="highlight">Report a Vacant Property Today!</div>
+    </div>
+
+    <div class="front-footer">
+      <div class="contact-item">
+        <div>📞</div>
+        <div class="contact-value">(510) 426-5280</div>
+      </div>
+      <div class="contact-item">
+        <div>✉️</div>
+        <div class="contact-value">info@barnhousing.org</div>
+      </div>
+      <div class="contact-item">
+        <div>🌐</div>
+        <div class="contact-value">barnhousing.org</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BACK SIDE -->
+  <div class="page-label">Back Side</div>
+  <div class="postcard back">
+    <div class="back-header">
+      <h2>What BARN Does</h2>
+    </div>
+
+    <div class="what-we-do">
+      <p>We connect vacant and neglected properties with families experiencing housing insecurity. Property owners grant us the right to use their properties, and we place vetted caretakers who maintain the home in exchange for stable housing. Neighborhoods are revitalized, properties stay maintained, and families get a foundation to thrive.</p>
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <h4>Identify</h4>
+        <p>Neighbors help us find vacant properties</p>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <h4>Restore</h4>
+        <p>Volunteers make properties safe & clean</p>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <h4>Welcome</h4>
+        <p>Families move in to renewed homes</p>
+      </div>
+    </div>
+
+    <div class="back-contact">
+      <div class="back-contact-info">
+        <div class="back-contact-item">
+          <div class="label">Call</div>
+          <div class="value">(510) 426-5280</div>
+        </div>
+        <div class="back-contact-item">
+          <div class="label">Email</div>
+          <div class="value">info@barnhousing.org</div>
+        </div>
+        <div class="back-contact-item">
+          <div class="label">Visit</div>
+          <div class="value">3020 E 18th St, Oakland</div>
+        </div>
+      </div>
+      <div class="back-website">
+        <div class="url">barnhousing.org</div>
+        <div class="nonprofit">501(c)(3) Nonprofit</div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

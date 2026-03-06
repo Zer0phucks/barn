@@ -1,0 +1,1775 @@
+{% extends "base.html" %}
+{% block title %}Outreach – BARN{% endblock %}
+
+{% block head %}
+<style>
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .sub-status-select {
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 4px 8px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .action-cell { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .doc-pre {
+    white-space: pre-wrap;
+    font-size: 13px;
+    color: var(--text);
+    background: var(--surface-2);
+    padding: 16px;
+    border-radius: var(--radius);
+    max-height: 500px;
+    overflow-y: auto;
+    font-family: 'Georgia', serif;
+    line-height: 1.7;
+  }
+
+  /* ── Pipeline / outreach.html CSS ── */
+  .funnel { display: flex; flex-direction: column; gap: 6px; }
+  .funnel-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+  }
+  .funnel-label {
+    width: 120px;
+    text-align: right;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .funnel-bar-wrap {
+    flex: 1;
+    background: var(--surface-2);
+    border-radius: 4px;
+    height: 24px;
+    overflow: hidden;
+    cursor: pointer;
+  }
+  .funnel-bar {
+    height: 100%;
+    border-radius: 4px;
+    min-width: 2px;
+    transition: width 0.4s ease;
+    display: flex;
+    align-items: center;
+    padding-left: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #fff;
+    white-space: nowrap;
+  }
+  .funnel-count { width: 50px; text-align: right; font-weight: 600; flex-shrink: 0; }
+
+  .stage-identified    { background: #6c757d; }
+  .stage-qualified     { background: #3498db; }
+  .stage-outreach_ready { background: #27ae60; }
+  .stage-contacted     { background: #e67e22; }
+  .stage-responding    { background: #f1c40f; color: #333; }
+  .stage-negotiating   { background: #9b59b6; }
+  .stage-partnered     { background: #1a8a4a; }
+  .stage-declined      { background: #c0392b; }
+  .stage-no_response   { background: #495057; }
+
+  .action-bar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .status-pill {
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .status-pill.active { background: rgba(39,174,96,0.15); color: var(--success); }
+  .dot-pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--success); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .filters {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .filters select, .filters input {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: var(--radius);
+    font-size: 13px;
+  }
+  .filters select:focus, .filters input:focus { outline: none; border-color: var(--primary); }
+
+  .cb { width: 16px; height: 16px; cursor: pointer; accent-color: var(--primary); }
+
+  .score-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 12px;
+  }
+  .score-high { background: rgba(39,174,96,0.2); color: #2ecc71; }
+  .score-mid  { background: rgba(243,156,18,0.2); color: #f39c12; }
+  .score-low  { background: rgba(231,76,60,0.2); color: #e74c3c; }
+  .score-none { background: var(--surface-2); color: var(--text-muted); }
+
+  .stage-select {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .stage-select:focus { outline: none; border-color: var(--primary); }
+
+  .vpt-yes { color: var(--danger); font-weight: 600; }
+  .vpt-no  { color: var(--text-muted); }
+
+  .row-actions { display: flex; gap: 4px; }
+  .row-actions .btn { padding: 4px 8px; font-size: 11px; }
+
+  .pager {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 12px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .pager-btns { display: flex; gap: 4px; }
+  .pager-btns .btn { padding: 6px 12px; }
+  .pager-btns .btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 24px;
+  }
+  .modal-sm { max-width: 500px; }
+  .modal-lg { max-width: 800px; }
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  .modal-header h3 { font-size: 18px; }
+  .modal-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 24px;
+    cursor: pointer;
+  }
+  .modal-close:hover { color: var(--text); }
+
+  .form-group { margin-bottom: 16px; }
+  .form-group label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .form-group input, .form-group textarea, .form-group select {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-family: inherit;
+  }
+  .form-group input:focus, .form-group textarea:focus { outline: none; border-color: var(--primary); }
+  .form-group textarea { resize: vertical; min-height: 120px; }
+
+  .timeline { border-left: 2px solid var(--border); padding-left: 16px; margin-top: 12px; }
+  .timeline-item { margin-bottom: 16px; position: relative; }
+  .timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -21px;
+    top: 4px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--primary);
+    border: 2px solid var(--surface);
+  }
+  .timeline-date { font-size: 11px; color: var(--text-muted); }
+  .timeline-text { font-size: 13px; margin-top: 2px; }
+  .timeline-stage {
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    display: inline-block;
+    margin-top: 2px;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-muted);
+  }
+  .empty-state p { margin-top: 8px; font-size: 14px; }
+
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 12px 20px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    z-index: 300;
+    display: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  }
+  .toast.success { border-color: var(--success); }
+  .toast.error { border-color: var(--danger); }
+
+  @media (max-width: 768px) {
+    .funnel-label { width: 80px; font-size: 11px; }
+  }
+</style>
+{% endblock %}
+
+{% block sidenav %}
+<nav class="sidenav">
+  <div class="sidenav-label">Outreach</div>
+  <a href="#pipeline" class="sidenav-tab active" data-panel="panel-pipeline">Pipeline</a>
+  <a href="#reports" class="sidenav-tab" data-panel="panel-reports">Reports</a>
+  <a href="#owners" class="sidenav-tab" data-panel="panel-owners">Owners</a>
+  <a href="#volunteers" class="sidenav-tab" data-panel="panel-volunteers">Volunteers</a>
+  <a href="#caretakers" class="sidenav-tab" data-panel="panel-caretakers">Caretakers</a>
+  <a href="#documents" class="sidenav-tab" data-panel="panel-documents">Documents</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+
+<!-- Pipeline Panel: existing outreach content -->
+<div id="panel-pipeline" class="panel active">
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" crossorigin="anonymous"></script>
+
+  <!-- Pipeline Funnel -->
+  <div class="card">
+    <h2>Pipeline Overview</h2>
+    <div class="funnel" id="funnel"></div>
+  </div>
+
+  <!-- Actions -->
+  <div class="card">
+    <div class="action-bar">
+      <button class="btn btn-primary" onclick="scoreAll()" id="btn-score">Score All Properties</button>
+      <button class="btn btn-success" onclick="generateSelected()" id="btn-pitch">Generate Pitches</button>
+      <button class="btn" onclick="refresh()">Refresh</button>
+      <span class="status-pill" id="score-status" style="display:none;">
+        <span class="dot-pulse"></span>
+        <span id="score-status-text">Scoring...</span>
+      </span>
+      <span class="status-pill" id="pitch-status" style="display:none;">
+        <span class="dot-pulse"></span>
+        <span id="pitch-status-text">Generating...</span>
+      </span>
+      <span style="flex:1;"></span>
+      <span id="selected-count" style="font-size:13px; color:var(--text-muted);"></span>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="card" style="padding:0; overflow:hidden;">
+    <div style="padding:16px 20px 0 20px;">
+      <div class="filters">
+        <select id="filter-stage" onchange="loadList()">
+          <option value="">All Stages</option>
+          <option value="identified">Identified</option>
+          <option value="qualified">Qualified</option>
+          <option value="outreach_ready">Outreach Ready</option>
+          <option value="contacted">Contacted</option>
+          <option value="responding">Responding</option>
+          <option value="negotiating">Negotiating</option>
+          <option value="partnered">Partnered</option>
+          <option value="declined">Declined</option>
+          <option value="no_response">No Response</option>
+        </select>
+        <select id="filter-city" onchange="loadList()">
+          <option value="">All Cities</option>
+        </select>
+        <input type="number" id="filter-score" placeholder="Min Score" min="0" max="100" style="width:100px;" onchange="loadList()">
+        <span style="flex:1;"></span>
+        <span style="font-size:12px; color:var(--text-muted);" id="total-label"></span>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:36px;"><input type="checkbox" class="cb" id="select-all" onchange="toggleAll(this)"></th>
+            <th data-sort="apn">APN</th>
+            <th data-sort="location_of_property">Address</th>
+            <th data-sort="city">City</th>
+            <th data-sort="outreach_score">Score</th>
+            <th>Stage</th>
+            <th>Email</th>
+            <th>VPT</th>
+            <th style="width:160px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="table-body">
+          <tr><td colspan="9" class="empty-state"><p>Loading...</p></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pager" style="padding:12px 20px;">
+      <span id="pager-info"></span>
+      <div class="pager-btns" id="pager-btns"></div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settings-modal">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Outreach Settings</h3>
+        <button class="modal-close" onclick="closeModal('settings-modal')">&times;</button>
+      </div>
+      <div class="form-group">
+        <label>OpenClaw Gateway URL</label>
+        <input type="url" id="set-gateway-url" placeholder="https://...">
+      </div>
+      <div class="form-group">
+        <label>Webhook Secret</label>
+        <input type="password" id="set-webhook-secret" placeholder="Secret key">
+      </div>
+      <div class="form-group">
+        <label>SMTP From Address</label>
+        <input type="email" id="set-smtp-from" placeholder="outreach@example.com">
+      </div>
+      <div class="form-group">
+        <label>Min Score Threshold</label>
+        <input type="number" id="set-min-score" min="0" max="100" value="50">
+      </div>
+      <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:20px;">
+        <button class="btn" onclick="closeModal('settings-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Property Detail Modal -->
+  <div class="modal-overlay" id="detail-modal">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h3 id="detail-title">Property Detail</h3>
+        <button class="modal-close" onclick="closeModal('detail-modal')">&times;</button>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;" id="detail-grid">
+        <!-- Left: Pitch -->
+        <div>
+          <div class="form-group">
+            <label>Stage</label>
+            <select id="detail-stage" class="stage-select" style="width:100%; padding:10px; font-size:14px;"></select>
+          </div>
+          <div class="form-group">
+            <label>Subject Line</label>
+            <input type="text" id="detail-subject">
+          </div>
+          <div class="form-group">
+            <label>Pitch Draft</label>
+            <textarea id="detail-body" rows="10"></textarea>
+          </div>
+          <div style="display:flex; gap:10px;">
+            <button class="btn btn-primary" onclick="savePitch()">Save Pitch</button>
+            <button class="btn btn-success" onclick="sendEmail()">Send Email</button>
+          </div>
+        </div>
+        <!-- Right: History -->
+        <div>
+          <label style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.3px;">Communication History</label>
+          <div class="timeline" id="detail-timeline">
+            <div class="empty-state"><p>No history yet</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+</div><!-- end panel-pipeline -->
+
+<!-- Reports Panel -->
+<div id="panel-reports" class="panel">
+  <h1 style="font-size:20px;font-weight:700;margin-bottom:20px;">Property Reports</h1>
+  <div class="card">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+      <select id="reports-status-filter" class="sub-status-select" onchange="loadReports()">
+        <option value="">All Statuses</option>
+        <option value="pending">Pending</option>
+        <option value="reviewing">Reviewing</option>
+        <option value="approved">Approved</option>
+        <option value="rejected">Rejected</option>
+      </select>
+      <span style="font-size:13px;color:var(--text-muted);">Total: <strong id="reports-total">–</strong></span>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>Date</th><th>Address</th><th>Reporter</th><th>Issue</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="tbl-reports-full"><tr><td colspan="6" style="color:var(--text-muted)">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Owners Panel -->
+<div id="panel-owners" class="panel">
+  <h1 style="font-size:20px;font-weight:700;margin-bottom:20px;">Owner Registrations</h1>
+  <div class="card">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+      <select id="owners-status-filter" class="sub-status-select" onchange="loadOwners()">
+        <option value="">All Statuses</option>
+        <option value="pending">Pending</option>
+        <option value="reviewing">Reviewing</option>
+        <option value="approved">Approved</option>
+      </select>
+      <span style="font-size:13px;color:var(--text-muted);">Total: <strong id="owners-total">–</strong></span>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>Date</th><th>Owner</th><th>Property</th><th>Contact</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="tbl-owners-full"><tr><td colspan="6" style="color:var(--text-muted)">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Volunteers Panel -->
+<div id="panel-volunteers" class="panel">
+  <h1 style="font-size:20px;font-weight:700;margin-bottom:20px;">Volunteer Applications</h1>
+  <div class="card">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+      <select id="volunteers-status-filter" class="sub-status-select" onchange="loadVolunteers()">
+        <option value="">All Statuses</option>
+        <option value="pending">Pending</option>
+        <option value="approved">Approved</option>
+        <option value="active">Active</option>
+      </select>
+      <span style="font-size:13px;color:var(--text-muted);">Total: <strong id="volunteers-total">–</strong></span>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>Date</th><th>Name</th><th>Email</th><th>Phone</th><th>Skills</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="tbl-volunteers-full"><tr><td colspan="7" style="color:var(--text-muted)">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Caretakers Panel -->
+<div id="panel-caretakers" class="panel">
+  <h1 style="font-size:20px;font-weight:700;margin-bottom:20px;">Caretaker Applications</h1>
+  <div class="card">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+      <select id="caretakers-status-filter" class="sub-status-select" onchange="loadCaretakers()">
+        <option value="">All Statuses</option>
+        <option value="pending">Pending</option>
+        <option value="reviewing">Reviewing</option>
+        <option value="approved">Approved</option>
+        <option value="waitlisted">Waitlisted</option>
+      </select>
+      <span style="font-size:13px;color:var(--text-muted);">Total: <strong id="caretakers-total">–</strong></span>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>Date</th><th>Name</th><th>Email</th><th>Family Size</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="tbl-caretakers-full"><tr><td colspan="6" style="color:var(--text-muted)">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Documents Panel -->
+<div id="panel-documents" class="panel">
+  <h1 style="font-size:20px;font-weight:700;margin-bottom:20px;">Legal Document Templates</h1>
+  <div class="card">
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">Legal templates for the BARN program. Click View to read or copy.</p>
+    <table class="data-table">
+      <thead><tr><th>Document</th><th>Category</th><th>Description</th><th>Action</th></tr></thead>
+      <tbody id="doc-list"></tbody>
+    </table>
+  </div>
+  <div id="doc-viewer" style="display:none;" class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h2 id="doc-viewer-title"></h2>
+      <button class="btn" onclick="closeDoc()">&#10005; Close</button>
+    </div>
+    <pre id="doc-viewer-body" class="doc-pre"></pre>
+    <div style="margin-top:12px;">
+      <button class="btn btn-primary" onclick="copyDoc()">Copy to Clipboard</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Tab routing ──
+const outreachPanelMap = {
+  pipeline:'panel-pipeline', reports:'panel-reports', owners:'panel-owners',
+  volunteers:'panel-volunteers', caretakers:'panel-caretakers', documents:'panel-documents'
+};
+function activateOutreachTab(hash) {
+  const key = (hash||'').replace('#','') || 'pipeline';
+  const panelId = outreachPanelMap[key] || 'panel-pipeline';
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.sidenav-tab').forEach(a => {
+    a.classList.toggle('active', a.dataset.panel === panelId);
+  });
+  const el = document.getElementById(panelId);
+  if (el) el.classList.add('active');
+  if (panelId === 'panel-reports') loadReports();
+  if (panelId === 'panel-owners') loadOwners();
+  if (panelId === 'panel-volunteers') loadVolunteers();
+  if (panelId === 'panel-caretakers') loadCaretakers();
+  if (panelId === 'panel-documents') renderDocuments();
+}
+document.querySelectorAll('.sidenav-tab').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    history.pushState(null,'',a.getAttribute('href'));
+    activateOutreachTab(a.getAttribute('href'));
+  });
+});
+window.addEventListener('popstate', () => activateOutreachTab(window.location.hash));
+activateOutreachTab(window.location.hash);
+
+// ── Submission helpers ──
+function fmt(iso) {
+  if (!iso) return '–';
+  return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+}
+function pill(status) {
+  return `<span class="pill pill-${status||'pending'}">${status||'pending'}</span>`;
+}
+async function patchStatus(endpoint, id, status, reloadFn) {
+  await fetch(`/api/submissions/${endpoint}/${id}`, {
+    method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status})
+  });
+  reloadFn();
+}
+async function deleteRow(endpoint, id, reloadFn) {
+  if (!confirm('Delete this record? This cannot be undone.')) return;
+  await fetch(`/api/submissions/${endpoint}/${id}`, {method:'DELETE'});
+  reloadFn();
+}
+
+// ── Reports ──
+async function loadReports() {
+  const status = document.getElementById('reports-status-filter')?.value||'';
+  const tbody = document.getElementById('tbl-reports-full');
+  tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-muted)">Loading…</td></tr>';
+  const data = await fetch(`/api/submissions/reports?limit=100&status=${encodeURIComponent(status)}`).then(r=>r.json()).catch(()=>({items:[],total:0}));
+  document.getElementById('reports-total').textContent = data.total??0;
+  tbody.innerHTML = (data.items||[]).map(x=>`
+    <tr>
+      <td>${fmt(x.created_at)}</td>
+      <td>${x.property_address||'–'}</td>
+      <td>${x.reporter_name||'–'}<br><span style="color:var(--text-muted);font-size:11px;">${x.reporter_email||''}</span></td>
+      <td style="max-width:180px;">${(x.issue_description||'').slice(0,80)}${(x.issue_description||'').length>80?'…':''}</td>
+      <td>${pill(x.status)}</td>
+      <td class="action-cell">
+        <select class="sub-status-select" onchange="patchStatus('reports','${x.id}',this.value,loadReports)">
+          ${['pending','reviewing','approved','rejected'].map(s=>`<option value="${s}"${x.status===s?' selected':''}>${s}</option>`).join('')}
+        </select>
+        <button class="btn btn-danger" onclick="deleteRow('reports','${x.id}',loadReports)" style="padding:4px 8px;font-size:12px;">&#10005;</button>
+      </td>
+    </tr>`).join('')||'<tr><td colspan="6" style="color:var(--text-muted)">No records found</td></tr>';
+}
+
+// ── Owners ──
+async function loadOwners() {
+  const status = document.getElementById('owners-status-filter')?.value||'';
+  const tbody = document.getElementById('tbl-owners-full');
+  tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-muted)">Loading…</td></tr>';
+  const data = await fetch(`/api/submissions/owners?limit=100&status=${encodeURIComponent(status)}`).then(r=>r.json()).catch(()=>({items:[],total:0}));
+  document.getElementById('owners-total').textContent = data.total??0;
+  tbody.innerHTML = (data.items||[]).map(x=>`
+    <tr>
+      <td>${fmt(x.created_at)}</td>
+      <td>${x.owner_name||'–'}</td>
+      <td>${x.property_address||'–'}</td>
+      <td>${x.contact_email||x.contact_phone||'–'}</td>
+      <td>${pill(x.status)}</td>
+      <td class="action-cell">
+        <select class="sub-status-select" onchange="patchStatus('owners','${x.id}',this.value,loadOwners)">
+          ${['pending','reviewing','approved'].map(s=>`<option value="${s}"${x.status===s?' selected':''}>${s}</option>`).join('')}
+        </select>
+        <button class="btn btn-danger" onclick="deleteRow('owners','${x.id}',loadOwners)" style="padding:4px 8px;font-size:12px;">&#10005;</button>
+      </td>
+    </tr>`).join('')||'<tr><td colspan="6" style="color:var(--text-muted)">No records found</td></tr>';
+}
+
+// ── Volunteers ──
+async function loadVolunteers() {
+  const status = document.getElementById('volunteers-status-filter')?.value||'';
+  const tbody = document.getElementById('tbl-volunteers-full');
+  tbody.innerHTML = '<tr><td colspan="7" style="color:var(--text-muted)">Loading…</td></tr>';
+  const data = await fetch(`/api/submissions/volunteers?limit=100&status=${encodeURIComponent(status)}`).then(r=>r.json()).catch(()=>({items:[],total:0}));
+  document.getElementById('volunteers-total').textContent = data.total??0;
+  tbody.innerHTML = (data.items||[]).map(x=>`
+    <tr>
+      <td>${fmt(x.created_at)}</td>
+      <td>${x.name||'–'}</td>
+      <td>${x.email||'–'}</td>
+      <td>${x.phone||'–'}</td>
+      <td style="max-width:140px;">${Array.isArray(x.skills)?x.skills.join(', '):(x.skills||'–')}</td>
+      <td>${pill(x.status)}</td>
+      <td class="action-cell">
+        <select class="sub-status-select" onchange="patchStatus('volunteers','${x.id}',this.value,loadVolunteers)">
+          ${['pending','approved','active'].map(s=>`<option value="${s}"${x.status===s?' selected':''}>${s}</option>`).join('')}
+        </select>
+        <button class="btn btn-danger" onclick="deleteRow('volunteers','${x.id}',loadVolunteers)" style="padding:4px 8px;font-size:12px;">&#10005;</button>
+      </td>
+    </tr>`).join('')||'<tr><td colspan="7" style="color:var(--text-muted)">No records found</td></tr>';
+}
+
+// ── Caretakers ──
+async function loadCaretakers() {
+  const status = document.getElementById('caretakers-status-filter')?.value||'';
+  const tbody = document.getElementById('tbl-caretakers-full');
+  tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-muted)">Loading…</td></tr>';
+  const data = await fetch(`/api/submissions/caretakers?limit=100&status=${encodeURIComponent(status)}`).then(r=>r.json()).catch(()=>({items:[],total:0}));
+  document.getElementById('caretakers-total').textContent = data.total??0;
+  tbody.innerHTML = (data.items||[]).map(x=>`
+    <tr>
+      <td>${fmt(x.created_at)}</td>
+      <td>${x.applicant_name||'–'}</td>
+      <td>${x.applicant_email||'–'}</td>
+      <td>${x.family_size||'–'}</td>
+      <td>${pill(x.status)}</td>
+      <td class="action-cell">
+        <select class="sub-status-select" onchange="patchStatus('caretakers','${x.id}',this.value,loadCaretakers)">
+          ${['pending','reviewing','approved','waitlisted'].map(s=>`<option value="${s}"${x.status===s?' selected':''}>${s}</option>`).join('')}
+        </select>
+        <button class="btn btn-danger" onclick="deleteRow('caretakers','${x.id}',loadCaretakers)" style="padding:4px 8px;font-size:12px;">&#10005;</button>
+      </td>
+    </tr>`).join('')||'<tr><td colspan="6" style="color:var(--text-muted)">No records found</td></tr>';
+}
+
+// ── Documents ──
+const DOCS = [
+  {
+    id: 'inspection-authorization',
+    title: 'Authorization to Enter and Inspect Property',
+    category: 'Owner',
+    description: 'Owner permission for BARN to enter and inspect property for 30 days.'
+  },
+  {
+    id: 'master-lease',
+    title: 'Master Lease Agreement',
+    category: 'Owner',
+    description: 'Use Agreement between BARN and property owner for the Caretaker Program.'
+  },
+  {
+    id: 'caretaker-license',
+    title: 'Caretaker License & Service Agreement',
+    category: 'Caretaker',
+    description: 'Agreement between BARN and Caretaker for property occupancy and maintenance duties.'
+  },
+  {
+    id: 'first-contact-email',
+    title: 'First Contact Email Template',
+    category: 'Outreach',
+    description: 'Email template for initial outreach to vacant property owners.'
+  },
+  {
+    id: 'snail-mail-letter',
+    title: 'Snail Mail Letter Template',
+    category: 'Outreach',
+    description: 'Physical mail template for property owner outreach.'
+  }
+];
+
+const DOC_CONTENT = {
+  'inspection-authorization': `AUTHORIZATION TO ENTER AND INSPECT PROPERTY
+
+This Authorization Agreement ("Agreement") is entered into as of the date signed below by and between the undersigned property owner ("Owner") and Bay Area Renovating Neighbors ("BARN"), a California nonprofit organization.
+
+## Property Owner Information
+
+Owner Name: ________________________________________
+
+Mailing Address: ________________________________________
+
+City, State, ZIP: ________________________________________
+
+Phone: _____________________ Email: _____________________
+
+## Property to be Inspected
+
+Property Address: ________________________________________
+
+City, State, ZIP: ________________________________________
+
+APN (if known): _____________________
+
+## Authorization Grant
+
+I, the undersigned property owner, hereby grant Bay Area Renovating Neighbors (BARN), its authorized agents, representatives, contractors, and volunteers, permission to enter and inspect the above-referenced property for the following purposes:
+
+1. Conducting a comprehensive assessment of the property's current condition
+2. Documenting any existing damage, deferred maintenance, or code compliance issues
+3. Taking photographs, video recordings, and measurements for evaluation and planning purposes
+4. Evaluating the property's suitability for participation in the BARN Caretaker Program
+5. Preparing cost estimates for any necessary repairs or renovations
+
+## Term of Authorization
+
+This authorization shall be valid for a period of THIRTY (30) DAYS from the date of execution, unless earlier revoked in writing by the Owner.
+
+## BARN's Obligations
+
+During the authorization period, BARN agrees to:
+
+• Provide reasonable advance notice (minimum 24 hours) before each property visit
+• Conduct all inspections during reasonable hours (8:00 AM - 6:00 PM, Monday-Saturday)
+• Take reasonable care to secure the property upon departure from each visit
+• Carry comprehensive general liability insurance during all property visits
+• Provide Owner with a written summary of findings within ten (10) business days of the final inspection
+
+## Owner Acknowledgments
+
+By signing below, Owner acknowledges and agrees that:
+
+• This authorization does not constitute a commitment by either party to enter into any further agreement
+• No renovation, repair, or construction work will be performed during the inspection period
+• Owner may revoke this authorization at any time by providing written notice to BARN
+• BARN is not responsible for any pre-existing conditions discovered during the inspection
+• Owner will ensure BARN has safe access to all areas of the property to be inspected
+
+## Limitation of Liability
+
+Owner agrees to hold harmless BARN and its agents from any claims arising from pre-existing property conditions. BARN shall be liable only for damage directly caused by the negligent acts of its agents during the inspection.
+
+## Contact Information
+
+BARN Representative: ________________________________________
+
+Phone: _____________________ Email: _____________________
+
+## Signatures
+
+____________________________________ Property Owner Signature
+
+____________________________________ Printed Name
+
+____________________________________ Date
+
+____________________________________ BARN Representative Signature
+
+____________________________________ Printed Name
+
+____________________________________ Date`,
+
+  'master-lease': `MASTER LEASE / USE AGREEMENT
+
+This Master Lease and Use Agreement ("Agreement") is entered into between the Property Owner ("Owner") and Bay Area Renovating Neighbors ("BARN"), a California nonprofit organization.
+
+## 1. Property Information
+
+Property Address: ________________________________________
+
+City, State, ZIP: ________________________________________
+
+Property Type: ________________________________________
+
+## 2. Term of Agreement
+
+This Agreement shall commence on _____________ and continue for a period of _________ year(s), with automatic renewal unless terminated by either party with 60 days written notice.
+
+## 3. Consideration
+
+In consideration for the use of the Property, BARN shall pay Owner the sum of One Dollar ($1.00) per year, with the first payment due upon execution of this Agreement.
+
+## 4. BARN's Responsibilities
+
+BARN agrees to:
+
+a) Maintain the Property in good condition and repair
+b) Ensure compliance with all applicable building codes and ordinances
+c) Carry comprehensive general liability insurance naming Owner as additional insured
+d) Place qualified Caretakers under BARN's Caretaker License Agreement
+e) Handle all maintenance, repairs, and code compliance at BARN's expense
+f) Provide Owner with quarterly property condition reports
+g) Respond to any emergency situations within 24 hours
+
+## 5. Caretaker Program
+
+Owner acknowledges and agrees that:
+
+a) BARN will place Caretakers at the Property under a revocable license agreement
+b) Caretakers are NOT tenants and do not have tenant rights
+c) BARN retains full authority over Caretaker placement and removal
+d) No landlord-tenant relationship exists between Owner and Caretakers
+e) BARN handles all Caretaker screening, placement, and management
+
+## 6. Owner's Responsibilities
+
+Owner agrees to:
+
+a) Maintain property ownership and pay all property taxes
+b) Maintain hazard insurance on the Property
+c) Notify BARN of any claims or liens against the Property
+d) Not interfere with BARN's use or Caretaker occupancy
+e) Provide BARN with emergency contact information
+
+## 7. Property Condition
+
+Owner represents that the Property is structurally sound and that all major systems (electrical, plumbing, HVAC) are functional or will be made functional by BARN.
+
+## 8. Termination
+
+Either party may terminate this Agreement with 60 days written notice. Upon termination:
+
+a) BARN shall relocate any Caretakers within 30 days
+b) BARN shall return the Property in equal or better condition
+c) Owner shall not be responsible for any Caretaker relocation costs
+
+## 9. Indemnification
+
+BARN shall indemnify and hold harmless Owner from any claims, damages, or liabilities arising from BARN's use of the Property or actions of Caretakers placed by BARN.
+
+## 10. Dispute Resolution
+
+Any disputes shall be resolved through mediation before any legal action is initiated.
+
+## Signatures
+
+____________________________________ Property Owner Signature
+
+____________________________________ Printed Name
+
+____________________________________ Date
+
+____________________________________ BARN Authorized Representative
+
+____________________________________ Printed Name
+
+____________________________________ Date`,
+
+  'caretaker-license': `CARETAKER LICENSE & SERVICE AGREEMENT
+
+This Caretaker License and Service Agreement ("Agreement") is entered into between Bay Area Renovating Neighbors ("BARN") and the Caretaker identified below.
+
+## Caretaker Information
+
+Name: ________________________________________
+
+Phone: _____________________ Email: _____________________
+
+Emergency Contact: ________________________________________
+
+Emergency Phone: _____________________
+
+## Property Assignment
+
+Property Address: ________________________________________
+
+City, State, ZIP: ________________________________________
+
+Move-In Date: _____________________
+
+## 1. Nature of Agreement
+
+Caretaker acknowledges and agrees that:
+
+a) This is a LICENSE agreement, NOT a lease or rental agreement
+b) Caretaker is NOT a tenant and does not have tenant rights
+c) This license is revocable at BARN's discretion
+d) No landlord-tenant relationship exists between Caretaker and the property owner
+e) Caretaker's right to occupy is contingent on compliance with this Agreement
+
+## 2. Caretaker Responsibilities
+
+Caretaker agrees to:
+
+a) Maintain the Property in clean, orderly condition
+b) Perform light maintenance duties including:
+   - Lawn care and basic landscaping
+   - Regular cleaning of common areas
+   - Reporting any maintenance issues to BARN within 24 hours
+   - Basic upkeep of property systems
+c) Allow BARN access for inspections with 24-hour notice
+d) Not make any alterations to the Property without written approval
+e) Not sublet or allow unauthorized occupants
+f) Comply with all applicable laws and ordinances
+g) Maintain peaceful relations with neighbors
+
+## 3. Prohibited Activities
+
+Caretaker shall NOT:
+
+a) Use the Property for any illegal purpose
+b) Keep pets without prior written approval
+c) Smoke inside the Property
+d) Make excessive noise or create disturbances
+e) Store hazardous materials on the Property
+f) Conduct business operations from the Property without approval
+
+## 4. Utilities
+
+Caretaker is responsible for:
+- Electric: [ ] Yes [ ] No
+- Gas: [ ] Yes [ ] No
+- Water: [ ] Yes [ ] No
+- Internet: [ ] Yes [ ] No
+
+## 5. Financial Contribution
+
+Caretaker agrees to contribute $___________ monthly toward utility costs, due on the 1st of each month.
+
+## 6. Insurance
+
+Caretaker is encouraged to obtain renter's insurance for personal belongings. BARN's insurance does not cover Caretaker's personal property.
+
+## 7. Termination
+
+a) BARN may terminate this license with 30 days written notice
+b) BARN may terminate immediately for violation of this Agreement
+c) Caretaker may terminate with 14 days written notice
+d) Upon termination, Caretaker shall vacate and remove all personal property
+
+## 8. Move-Out Condition
+
+Upon termination, Caretaker shall leave the Property in the same or better condition as at move-in, ordinary wear and tear excepted.
+
+## 9. Acknowledgments
+
+Caretaker acknowledges that:
+
+a) BARN is a nonprofit organization providing housing assistance
+b) Participation in this program is voluntary
+c) This license does not create any employment relationship
+d) Caretaker has read and understands all terms of this Agreement
+
+## Signatures
+
+____________________________________ Caretaker Signature
+
+____________________________________ Printed Name
+
+____________________________________ Date
+
+____________________________________ BARN Representative Signature
+
+____________________________________ Printed Name
+
+____________________________________ Date
+
+## Property Condition Checklist (Complete at Move-In)
+
+Kitchen: ________________________________________
+
+Bathroom(s): ________________________________________
+
+Bedrooms: ________________________________________
+
+Living Areas: ________________________________________
+
+Exterior: ________________________________________
+
+Notes: ________________________________________`,
+
+  'first-contact-email': `FIRST CONTACT EMAIL TEMPLATE
+
+Subject: Partnership Opportunity for Your Property at [PROPERTY ADDRESS]
+
+---
+
+Dear [PROPERTY OWNER NAME],
+
+I hope this message finds you well. My name is [YOUR NAME], and I'm reaching out on behalf of Bay Area Renovating Neighbors (BARN), a California nonprofit organization dedicated to addressing housing instability while helping property owners maintain their vacant properties.
+
+## Why We're Contacting You
+
+We noticed that your property at [PROPERTY ADDRESS] may currently be vacant or underutilized. We understand that maintaining a vacant property can be challenging—from ongoing maintenance costs to security concerns and potential code compliance issues.
+
+## What BARN Offers
+
+Our innovative Caretaker Program provides a unique solution that benefits both property owners and families in need:
+
+**For You as the Property Owner:**
+• Zero maintenance costs — BARN handles all upkeep and repairs
+• No tenant complications — Caretakers hold a revocable license, not a lease
+• Property protection — Occupied properties deter vandalism and deterioration
+• Code compliance — We ensure your property meets all local requirements
+• Quarterly property condition reports
+• Comprehensive liability insurance coverage
+
+**How It Works:**
+1. You grant BARN a simple Use Agreement for $1/year
+2. We assess and renovate the property as needed (at no cost to you)
+3. We place vetted caretakers who maintain the property in exchange for housing
+4. You retain full ownership and can reclaim the property with 60 days notice
+
+## No Obligations
+
+We'd love the opportunity to discuss how this program might work for your specific situation. There's absolutely no obligation—just a chance to explore whether BARN could be a good fit for your property.
+
+## Next Steps
+
+Would you be available for a brief 15-minute call this week? I'm happy to answer any questions and provide more details about our program.
+
+You can reach me at:
+• Phone: [YOUR PHONE]
+• Email: [YOUR EMAIL]
+
+Alternatively, you can learn more about our program at [WEBSITE URL] or register your property directly at [REGISTRATION URL].
+
+Thank you for considering this opportunity. We look forward to the possibility of working together to make a positive impact in our community.
+
+Warm regards,
+
+[YOUR NAME]
+[YOUR TITLE]
+Bay Area Renovating Neighbors (BARN)
+[PHONE NUMBER]
+[EMAIL ADDRESS]
+
+---
+
+P.S. BARN has helped [X] property owners and housed [Y] families since [YEAR]. We'd be honored to add your property to our network of community partners.`,
+
+  'snail-mail-letter': `PHYSICAL MAIL LETTER TEMPLATE
+
+[BARN LETTERHEAD]
+
+Bay Area Renovating Neighbors
+[BARN ADDRESS LINE 1]
+[BARN ADDRESS LINE 2]
+[PHONE] | [EMAIL] | [WEBSITE]
+
+---
+
+[DATE]
+
+[PROPERTY OWNER NAME]
+[OWNER ADDRESS LINE 1]
+[OWNER ADDRESS LINE 2]
+[CITY, STATE ZIP]
+
+RE: Partnership Opportunity for Your Property at [PROPERTY ADDRESS]
+
+Dear [PROPERTY OWNER NAME],
+
+I am writing to introduce you to Bay Area Renovating Neighbors (BARN), a California nonprofit organization, and to share an opportunity that may benefit both you and families in our community who need housing assistance.
+
+## About Your Property
+
+Our records indicate that your property located at:
+
+    [PROPERTY ADDRESS]
+    [PROPERTY CITY, STATE ZIP]
+
+may currently be vacant or underutilized. We understand that maintaining an unoccupied property presents unique challenges, including:
+
+    • Ongoing maintenance and upkeep costs
+    • Security and vandalism concerns
+    • Potential code compliance issues
+    • Property deterioration from lack of occupancy
+
+## Our Innovative Solution
+
+BARN's Caretaker Program offers a proven solution that addresses these challenges while creating positive community impact. Here's how it works:
+
+**THE BARN ADVANTAGE FOR PROPERTY OWNERS:**
+
+    ✓ ZERO Maintenance Costs
+      BARN assumes full responsibility for all property maintenance,
+      repairs, and code compliance—at absolutely no cost to you.
+
+    ✓ NO Tenant Complications
+      Unlike traditional rentals, our caretakers hold a revocable
+      license agreement. This means no eviction proceedings or
+      tenant rights issues if you need your property back.
+
+    ✓ Property Protection
+      An occupied property is a protected property. Our caretakers
+      provide 24/7 presence, deterring vandalism and preventing
+      the deterioration that plagues vacant homes.
+
+    ✓ Complete Peace of Mind
+      We provide comprehensive liability insurance, quarterly
+      condition reports, and responsive property management.
+
+## Simple Agreement Terms
+
+    • Minimal paperwork — just a simple Use Agreement
+    • Nominal consideration — $1.00 per year
+    • Flexible terms — reclaim your property with 60 days notice
+    • You retain full ownership at all times
+
+## Who Are Our Caretakers?
+
+BARN carefully vets all caretaker families. They agree to:
+
+    • Maintain the property in clean, orderly condition
+    • Perform light maintenance duties
+    • Allow periodic inspections
+    • Contribute modestly toward utilities
+
+In exchange, they receive stable housing while they work toward permanent solutions.
+
+## What Others Are Saying
+
+"BARN took a property that was becoming a liability and turned it into an asset. I don't worry about vandalism anymore, and I know a family is benefiting." — Property Owner, [CITY]
+
+## No Obligation — Let's Talk
+
+I would welcome the opportunity to discuss your property and answer any questions you may have. There is absolutely no obligation.
+
+Please contact me at your convenience:
+
+    Phone:  [YOUR PHONE]
+    Email:  [YOUR EMAIL]
+    Web:    [WEBSITE URL]
+
+You may also register your property online at [REGISTRATION URL] to schedule a free property assessment.
+
+Thank you for taking the time to consider this opportunity. Together, we can protect your property while making a meaningful difference in someone's life.
+
+Sincerely,
+
+
+
+____________________________________
+[YOUR NAME]
+[YOUR TITLE]
+Bay Area Renovating Neighbors
+
+---
+
+Enclosures:
+[ ] BARN Program Brochure
+[ ] Property Owner FAQ Sheet
+[ ] Postage-Paid Response Card
+
+---
+
+BAY AREA RENOVATING NEIGHBORS is a 501(c)(3) nonprofit organization.
+Tax ID: [EIN NUMBER]`
+};
+
+function renderDocuments() {
+  const tbody = document.getElementById('doc-list');
+  if (!tbody) return;
+  tbody.innerHTML = DOCS.map(d=>`
+    <tr>
+      <td><strong>${d.title}</strong></td>
+      <td><span class="pill" style="background:var(--surface-2);color:var(--text-muted);font-weight:normal;">${d.category}</span></td>
+      <td style="color:var(--text-muted);font-size:12px;">${d.description}</td>
+      <td><button class="btn btn-primary" onclick="viewDoc('${d.id}','${d.title.replace(/'/g,"\\'")}')" style="padding:4px 12px;font-size:12px;">View</button></td>
+    </tr>`).join('');
+}
+
+let currentDocContent = '';
+function viewDoc(id, title) {
+  currentDocContent = DOC_CONTENT[id]||'(Content not available)';
+  document.getElementById('doc-viewer-title').textContent = title;
+  document.getElementById('doc-viewer-body').textContent = currentDocContent;
+  document.getElementById('doc-viewer').style.display = 'block';
+  document.getElementById('doc-viewer').scrollIntoView({behavior:'smooth'});
+}
+function closeDoc() { document.getElementById('doc-viewer').style.display='none'; }
+function copyDoc() {
+  navigator.clipboard.writeText(currentDocContent)
+    .then(()=>alert('Copied to clipboard!'))
+    .catch(()=>alert('Copy failed — select and copy manually.'));
+}
+
+// ── Pipeline JS (from outreach.html) ──
+const SUPABASE_URL = '{{ supabase_url }}';
+const SUPABASE_ANON_KEY = '{{ supabase_anon_key }}';
+let sbClient = null;
+
+const STAGES = [
+  'identified','qualified','outreach_ready','contacted',
+  'responding','negotiating','partnered','declined','no_response'
+];
+const STAGE_LABELS = {
+  identified: 'Identified', qualified: 'Qualified', outreach_ready: 'Outreach Ready',
+  contacted: 'Contacted', responding: 'Responding', negotiating: 'Negotiating',
+  partnered: 'Partnered', declined: 'Declined', no_response: 'No Response'
+};
+
+let currentSort = 'outreach_score';
+let currentOrder = 'desc';
+let currentPage = 1;
+const PAGE_SIZE = 25;
+let listTotal = 0;
+let selected = new Set();
+let currentDetailApn = null;
+let scorePoller = null;
+let pitchPoller = null;
+
+function initSupabase() {
+  if (sbClient) return sbClient;
+  const lib = window.supabase;
+  if (lib && lib.createClient) {
+    sbClient = lib.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }
+  return sbClient;
+}
+
+async function authHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
+  const sb = initSupabase();
+  if (sb) {
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+    } catch (e) { /* session may not exist */ }
+  }
+  return headers;
+}
+
+async function apiFetch(url, opts = {}) {
+  const headers = await authHeaders();
+  if (opts.headers) Object.assign(headers, opts.headers);
+  opts.headers = headers;
+  const res = await fetch(url, opts);
+  if (res.status === 401) {
+    window.location.href = '/login';
+    return null;
+  }
+  return res;
+}
+
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast' + (type ? ' ' + type : '');
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 3500);
+}
+
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+document.querySelectorAll('.modal-overlay').forEach(ov => {
+  ov.addEventListener('click', e => {
+    if (e.target === ov) ov.classList.remove('open');
+  });
+});
+
+async function loadPipeline() {
+  try {
+    const res = await apiFetch('/api/outreach/pipeline');
+    if (!res) return;
+    const json = await res.json();
+    if (!json.success) return;
+    const data = json.data || {};
+    const total = STAGES.reduce((s, k) => s + (data[k] || 0), 0) || 1;
+    const funnel = document.getElementById('funnel');
+    funnel.innerHTML = '';
+    STAGES.forEach(stage => {
+      const count = data[stage] || 0;
+      const pct = Math.max((count / total) * 100, count > 0 ? 3 : 0);
+      const row = document.createElement('div');
+      row.className = 'funnel-row';
+      row.innerHTML = `
+        <span class="funnel-label">${STAGE_LABELS[stage]}</span>
+        <div class="funnel-bar-wrap" onclick="filterByStage('${stage}')">
+          <div class="funnel-bar stage-${stage}" style="width:${pct}%">${count > 0 ? count : ''}</div>
+        </div>
+        <span class="funnel-count">${count.toLocaleString()}</span>`;
+      funnel.appendChild(row);
+    });
+  } catch (e) {
+    console.error('Pipeline load error:', e);
+  }
+}
+
+function filterByStage(stage) {
+  document.getElementById('filter-stage').value = stage;
+  currentPage = 1;
+  loadList();
+}
+
+async function loadList() {
+  const stage = document.getElementById('filter-stage').value;
+  const city = document.getElementById('filter-city').value;
+  const minScore = document.getElementById('filter-score').value;
+  const offset = (currentPage - 1) * PAGE_SIZE;
+
+  const params = new URLSearchParams({
+    sort: currentSort,
+    order: currentOrder,
+    limit: PAGE_SIZE,
+    offset: offset
+  });
+  if (stage) params.set('stage', stage);
+  if (city) params.set('city', city);
+  if (minScore) params.set('min_score', minScore);
+
+  try {
+    const res = await apiFetch(`/api/outreach/list?${params}`);
+    if (!res) return;
+    const json = await res.json();
+    if (!json.success) { toast('Failed to load list', 'error'); return; }
+
+    listTotal = json.total || 0;
+    const data = json.data || [];
+    document.getElementById('total-label').textContent = `${listTotal.toLocaleString()} properties`;
+    renderTable(data);
+    renderPager();
+    updateSelectedCount();
+
+    const citySelect = document.getElementById('filter-city');
+    if (citySelect.options.length <= 1) {
+      const cities = [...new Set(data.map(r => r.city).filter(Boolean))].sort();
+      cities.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        citySelect.appendChild(opt);
+      });
+    }
+  } catch (e) {
+    console.error('List load error:', e);
+    toast('Error loading data', 'error');
+  }
+}
+
+function renderTable(rows) {
+  const tbody = document.getElementById('table-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty-state"><p>No properties found</p></td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(r => {
+    const apn = r.apn || '';
+    const score = r.outreach_score;
+    const scoreClass = score == null ? 'score-none' : score >= 70 ? 'score-high' : score >= 50 ? 'score-mid' : 'score-low';
+    const scoreText = score != null ? score : '-';
+    const stage = r.outreach_stage || 'identified';
+    const email = r.owner_email || '';
+    const hasVpt = r.has_vpt;
+    const checked = selected.has(apn) ? 'checked' : '';
+
+    const stageOpts = STAGES.map(s =>
+      `<option value="${s}" ${s === stage ? 'selected' : ''}>${STAGE_LABELS[s]}</option>`
+    ).join('');
+
+    return `<tr>
+      <td><input type="checkbox" class="cb" value="${apn}" ${checked} onchange="toggleSelect(this)"></td>
+      <td><a href="#" onclick="openDetail('${apn}'); return false;">${apn}</a></td>
+      <td>${r.location_of_property || '-'}</td>
+      <td>${r.city || '-'}</td>
+      <td><span class="score-badge ${scoreClass}">${scoreText}</span></td>
+      <td><select class="stage-select" onchange="changeStage('${apn}', this.value)">${stageOpts}</select></td>
+      <td style="max-width:160px; overflow:hidden; text-overflow:ellipsis;">${email || '<span style="color:var(--text-muted);">-</span>'}</td>
+      <td>${hasVpt ? '<span class="vpt-yes">YES</span>' : '<span class="vpt-no">No</span>'}</td>
+      <td class="row-actions">
+        <button class="btn" onclick="generatePitch('${apn}')" title="Generate Pitch">Pitch</button>
+        <button class="btn" onclick="openDetail('${apn}')" title="View detail">View</button>
+        <button class="btn btn-success" onclick="sendOne('${apn}')" title="Send email">Send</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderPager() {
+  const totalPages = Math.ceil(listTotal / PAGE_SIZE) || 1;
+  const info = document.getElementById('pager-info');
+  const start = Math.min((currentPage - 1) * PAGE_SIZE + 1, listTotal);
+  const end = Math.min(currentPage * PAGE_SIZE, listTotal);
+  info.textContent = listTotal > 0 ? `${start}-${end} of ${listTotal}` : 'No results';
+
+  const btns = document.getElementById('pager-btns');
+  btns.innerHTML = '';
+  if (totalPages <= 1) return;
+
+  const addBtn = (label, page, active = false) => {
+    const b = document.createElement('button');
+    b.className = 'btn' + (active ? ' active' : '');
+    b.textContent = label;
+    b.disabled = active;
+    b.onclick = () => { currentPage = page; loadList(); };
+    btns.appendChild(b);
+  };
+
+  addBtn('Prev', currentPage - 1);
+  if (currentPage > 1) document.querySelector('#pager-btns .btn').disabled = false;
+  else document.querySelector('#pager-btns .btn').disabled = true;
+
+  const start_p = Math.max(1, currentPage - 2);
+  const end_p = Math.min(totalPages, currentPage + 2);
+  for (let i = start_p; i <= end_p; i++) {
+    addBtn(i, i, i === currentPage);
+  }
+
+  addBtn('Next', currentPage + 1);
+  const allBtns = btns.querySelectorAll('.btn');
+  allBtns[allBtns.length - 1].disabled = currentPage >= totalPages;
+}
+
+document.querySelectorAll('th[data-sort]').forEach(th => {
+  th.addEventListener('click', () => {
+    const col = th.dataset.sort;
+    if (currentSort === col) {
+      currentOrder = currentOrder === 'asc' ? 'desc' : 'asc';
+    } else {
+      currentSort = col;
+      currentOrder = 'desc';
+    }
+    currentPage = 1;
+    loadList();
+  });
+});
+
+function toggleAll(el) {
+  document.querySelectorAll('#table-body .cb').forEach(cb => {
+    cb.checked = el.checked;
+    if (el.checked) selected.add(cb.value);
+    else selected.delete(cb.value);
+  });
+  updateSelectedCount();
+}
+
+function toggleSelect(cb) {
+  if (cb.checked) selected.add(cb.value);
+  else selected.delete(cb.value);
+  updateSelectedCount();
+}
+
+function updateSelectedCount() {
+  const el = document.getElementById('selected-count');
+  el.textContent = selected.size > 0 ? `${selected.size} selected` : '';
+}
+
+async function changeStage(apn, stage) {
+  try {
+    const res = await apiFetch(`/api/outreach/${apn}/stage`, {
+      method: 'POST',
+      body: JSON.stringify({ stage, notes: '' })
+    });
+    if (!res) return;
+    const json = await res.json();
+    if (json.success) {
+      toast(`Stage updated to ${STAGE_LABELS[stage]}`);
+      loadPipeline();
+    } else {
+      toast(json.error || 'Failed to update stage', 'error');
+    }
+  } catch (e) {
+    toast('Error updating stage', 'error');
+  }
+}
+
+async function scoreAll() {
+  try {
+    const btn = document.getElementById('btn-score');
+    btn.disabled = true;
+    const res = await apiFetch('/api/outreach/score', {
+      method: 'POST',
+      body: JSON.stringify({ apns: null })
+    });
+    if (!res) return;
+    const json = await res.json();
+    toast(json.message || 'Scoring started');
+    startScorePolling();
+  } catch (e) {
+    toast('Error starting scoring', 'error');
+    document.getElementById('btn-score').disabled = false;
+  }
+}
+
+function startScorePolling() {
+  const pill = document.getElementById('score-status');
+  pill.style.display = 'inline-flex';
+  if (scorePoller) clearInterval(scorePoller);
+  scorePoller = setInterval(async () => {
+    try {
+      const res = await apiFetch('/api/outreach/score/status');
+      if (!res) return;
+      const d = await res.json();
+      document.getElementById('score-status-text').textContent =
+        `Scoring ${d.completed || 0}/${d.total || 0}`;
+      if (!d.is_running) {
+        clearInterval(scorePoller);
+        scorePoller = null;
+        pill.style.display = 'none';
+        document.getElementById('btn-score').disabled = false;
+        if (d.failed > 0) toast(`Scoring done. ${d.failed} failed.`, 'error');
+        else toast('Scoring complete', 'success');
+        refresh();
+      }
+    } catch (e) { /* ignore polling errors */ }
+  }, 2000);
+}
+
+async function generateSelected() {
+  if (selected.size === 0) { toast('Select properties first', 'error'); return; }
+  await startPitchGeneration([...selected]);
+}
+
+async function generatePitch(apn) {
+  await startPitchGeneration([apn]);
+}
+
+async function startPitchGeneration(apns) {
+  try {
+    const btn = document.getElementById('btn-pitch');
+    btn.disabled = true;
+    const res = await apiFetch('/api/outreach/pitch/generate', {
+      method: 'POST',
+      body: JSON.stringify({ apns })
+    });
+    if (!res) return;
+    const json = await res.json();
+    toast(json.message || 'Pitch generation started');
+    startPitchPolling();
+  } catch (e) {
+    toast('Error starting pitch generation', 'error');
+    document.getElementById('btn-pitch').disabled = false;
+  }
+}
+
+function startPitchPolling() {
+  const pill = document.getElementById('pitch-status');
+  pill.style.display = 'inline-flex';
+  if (pitchPoller) clearInterval(pitchPoller);
+  pitchPoller = setInterval(async () => {
+    try {
+      const res = await apiFetch('/api/outreach/pitch/status');
+      if (!res) return;
+      const d = await res.json();
+      const txt = d.current_apn ? `Pitch: ${d.current_apn}` : `Pitch: ${d.completed || 0} done`;
+      document.getElementById('pitch-status-text').textContent = txt;
+      if (!d.is_running) {
+        clearInterval(pitchPoller);
+        pitchPoller = null;
+        pill.style.display = 'none';
+        document.getElementById('btn-pitch').disabled = false;
+        if (!d.api_configured) toast('API not configured - check settings', 'error');
+        else if (d.failed > 0) toast(`Pitches done. ${d.failed} failed.`, 'error');
+        else toast('Pitch generation complete', 'success');
+        loadList();
+      }
+    } catch (e) { /* ignore */ }
+  }, 2000);
+}
+
+async function openDetail(apn) {
+  currentDetailApn = apn;
+  document.getElementById('detail-title').textContent = `Property: ${apn}`;
+
+  const sel = document.getElementById('detail-stage');
+  sel.innerHTML = STAGES.map(s => `<option value="${s}">${STAGE_LABELS[s]}</option>`).join('');
+
+  document.getElementById('detail-subject').value = '';
+  document.getElementById('detail-body').value = '';
+  document.getElementById('detail-timeline').innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
+  openModal('detail-modal');
+
+  try {
+    const res = await apiFetch(`/api/outreach/${apn}`);
+    if (!res) return;
+    const json = await res.json();
+    if (!json.success) { toast('Failed to load detail', 'error'); return; }
+
+    const o = json.outreach || {};
+    sel.value = o.outreach_stage || 'identified';
+    document.getElementById('detail-subject').value = o.pitch_subject || '';
+    document.getElementById('detail-body').value = o.pitch_body || '';
+
+    const msgs = json.messages || [];
+    const tl = document.getElementById('detail-timeline');
+    if (!msgs.length) {
+      tl.innerHTML = '<div class="empty-state"><p>No communication history</p></div>';
+    } else {
+      tl.innerHTML = msgs.map(m => `
+        <div class="timeline-item">
+          <div class="timeline-date">${new Date(m.created_at).toLocaleString()}</div>
+          <div class="timeline-text">${escHtml(m.notes || m.message || '')}</div>
+          ${m.stage ? `<span class="timeline-stage">${STAGE_LABELS[m.stage] || m.stage}</span>` : ''}
+        </div>`).join('');
+    }
+  } catch (e) {
+    toast('Error loading property detail', 'error');
+  }
+}
+
+async function savePitch() {
+  if (!currentDetailApn) return;
+  const subject = document.getElementById('detail-subject').value;
+  const body = document.getElementById('detail-body').value;
+  try {
+    const res = await apiFetch(`/api/outreach/${currentDetailApn}/pitch`, {
+      method: 'PUT',
+      body: JSON.stringify({ subject, body })
+    });
+    if (!res) return;
+    const json = await res.json();
+    if (json.success) toast('Pitch saved', 'success');
+    else toast(json.error || 'Failed to save', 'error');
+  } catch (e) {
+    toast('Error saving pitch', 'error');
+  }
+}
+
+async function sendEmail() {
+  if (!currentDetailApn) return;
+  if (!confirm('Send outreach email for this property?')) return;
+  await doSend(currentDetailApn);
+}
+
+async function sendOne(apn) {
+  if (!confirm(`Send outreach email for ${apn}?`)) return;
+  await doSend(apn);
+}
+
+async function doSend(apn) {
+  try {
+    const res = await apiFetch(`/api/outreach/${apn}/send`, { method: 'POST' });
+    if (!res) return;
+    const json = await res.json();
+    if (json.success) {
+      toast('Email sent', 'success');
+      loadList();
+      loadPipeline();
+    } else {
+      toast(json.error || 'Failed to send', 'error');
+    }
+  } catch (e) {
+    toast('Error sending email', 'error');
+  }
+}
+
+document.getElementById('detail-stage').addEventListener('change', async function() {
+  if (!currentDetailApn) return;
+  await changeStage(currentDetailApn, this.value);
+});
+
+async function openSettings() {
+  try {
+    const res = await apiFetch('/api/outreach/settings');
+    if (!res) return;
+    const json = await res.json();
+    if (json.success) {
+      const d = json.data || {};
+      document.getElementById('set-gateway-url').value = d.openclaw_gateway_url || '';
+      document.getElementById('set-webhook-secret').value = d.webhook_secret || '';
+      document.getElementById('set-smtp-from').value = d.smtp_from_address || '';
+      document.getElementById('set-min-score').value = d.min_score_threshold ?? 50;
+    }
+  } catch (e) { /* proceed with empty form */ }
+  openModal('settings-modal');
+}
+
+async function saveSettings() {
+  const payload = {
+    openclaw_gateway_url: document.getElementById('set-gateway-url').value,
+    webhook_secret: document.getElementById('set-webhook-secret').value,
+    smtp_from_address: document.getElementById('set-smtp-from').value,
+    min_score_threshold: parseInt(document.getElementById('set-min-score').value) || 50
+  };
+  try {
+    const res = await apiFetch('/api/outreach/settings', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    if (!res) return;
+    const json = await res.json();
+    if (json.success) {
+      toast('Settings saved', 'success');
+      closeModal('settings-modal');
+    } else {
+      toast(json.error || 'Failed to save settings', 'error');
+    }
+  } catch (e) {
+    toast('Error saving settings', 'error');
+  }
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+async function refresh() {
+  await Promise.all([loadPipeline(), loadList()]);
+}
+
+async function checkRunningTasks() {
+  try {
+    const [scoreRes, pitchRes] = await Promise.all([
+      apiFetch('/api/outreach/score/status'),
+      apiFetch('/api/outreach/pitch/status')
+    ]);
+    if (scoreRes) {
+      const d = await scoreRes.json();
+      if (d.is_running) startScorePolling();
+    }
+    if (pitchRes) {
+      const d = await pitchRes.json();
+      if (d.is_running) startPitchPolling();
+    }
+  } catch (e) { /* ignore */ }
+}
+
+// Init pipeline on load (only if pipeline panel is active or becomes active)
+document.addEventListener('DOMContentLoaded', () => {
+  initSupabase();
+  // Only load pipeline data if we're on the pipeline tab
+  if (document.getElementById('panel-pipeline').classList.contains('active')) {
+    refresh();
+    checkRunningTasks();
+  }
+});
+</script>
+{% endblock %}

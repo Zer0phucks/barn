@@ -1,0 +1,575 @@
+{% extends "base.html" %}
+{% block title %}{{ property.display_name or property.apn }} – BARN{% endblock %}
+
+{% block head %}
+<style>
+    /* Topbar */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 10px 16px; border-bottom: 1px solid var(--border);
+      background: var(--panel); position: sticky; top: 0; z-index: 20; flex-wrap: wrap;
+    }
+    .topbar-left, .topbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+    /* Buttons */
+    .btn, .link-btn {
+      border: 1px solid var(--border); background: #fff; color: var(--text);
+      border-radius: 6px; padding: 7px 12px; font-size: 13px; cursor: pointer;
+      text-decoration: none; display: inline-flex; align-items: center; gap: 5px;
+    }
+    .btn:hover, .link-btn:hover { background: #f2f6fb; }
+    .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .btn.primary:hover { background: var(--primary-hover); }
+    .btn.favorite.active { background: #fef3c7; border-color: #f59e0b; color: #92400e; }
+    .btn.danger { color: var(--danger); border-color: #f5c6c2; }
+    .btn.danger:hover { background: #fff1f0; border-color: var(--danger); }
+    .btn:disabled { opacity: 0.5; cursor: default; pointer-events: none; }
+
+    /* Main content */
+    .content { max-width: 860px; margin: 0 auto; padding: 16px; }
+
+    .property-heading { margin-bottom: 14px; }
+    .property-heading h1 { margin: 0 0 4px; font-size: 22px; line-height: 1.2; }
+    .subtitle { color: var(--muted); font-size: 14px; }
+
+    /* Street view */
+    .streetview-block {
+      margin-bottom: 16px; border-radius: 10px; overflow: hidden;
+      border: 1px solid var(--border); background: #f0f4fa;
+      min-height: 180px; display: flex; align-items: center; justify-content: center;
+    }
+    .streetview-block a { display: block; width: 100%; }
+    .streetview-block img {
+      display: block; width: 100%; max-height: 380px; object-fit: cover;
+      transition: opacity 0.15s;
+    }
+    .streetview-block img:hover { opacity: 0.88; }
+    .streetview-placeholder {
+      padding: 32px; text-align: center; color: var(--muted); font-size: 14px;
+    }
+    .streetview-placeholder a { color: var(--primary); }
+
+    /* Panel */
+    .panel {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px; margin-bottom: 14px;
+    }
+    .panel h2 { margin: 0 0 12px; font-size: 16px; }
+
+    /* Outreach badge */
+    .outreach-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .outreach-badge {
+      display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 13px;
+      font-weight: 600; letter-spacing: 0.02em;
+    }
+    .stage-identified     { background: #f3f4f6; color: #374151; }
+    .stage-qualified      { background: #dbeafe; color: #1e40af; }
+    .stage-outreach_ready { background: #cffafe; color: #164e63; }
+    .stage-contacted      { background: #d1fae5; color: #065f46; }
+    .stage-responding     { background: #fef9c3; color: #713f12; }
+    .stage-negotiating    { background: #fed7aa; color: #7c2d12; }
+    .stage-partnered      { background: #ede9fe; color: #4c1d95; }
+    .stage-declined       { background: #fee2e2; color: #7f1d1d; }
+    .stage-no_response    { background: #f3f4f6; color: #6b7280; }
+
+    /* Key-value grid */
+    .kv-grid { display: grid; grid-template-columns: 160px 1fr; gap: 7px 10px; font-size: 14px; }
+    .kv-grid dt { color: var(--muted); }
+    .kv-grid dd { margin: 0; word-break: break-word; }
+    .score-good { color: var(--success); font-weight: bold; }
+    .score-bad  { color: var(--danger);  font-weight: bold; }
+
+    /* Research links */
+    .links-list { display: flex; flex-direction: column; gap: 7px; }
+    .link-item {
+      display: flex; align-items: center; justify-content: space-between;
+      border: 1px solid #ebeff5; border-radius: 8px; padding: 8px 12px;
+      background: #fafcff; font-size: 14px;
+    }
+    .link-item .lbl { font-weight: 600; }
+    .link-item a {
+      color: var(--primary); text-decoration: none; font-size: 13px;
+      border: 1px solid var(--primary); border-radius: 5px; padding: 4px 10px;
+    }
+    .link-item a:hover { background: #edf4ff; }
+
+    /* Dialogs */
+    .dialog-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+      z-index: 100; align-items: center; justify-content: center;
+    }
+    .dialog-overlay.open { display: flex; }
+    .dialog-box {
+      background: #fff; border-radius: 10px; padding: 24px 28px;
+      max-width: 520px; width: 94%; box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+      max-height: 90vh; overflow-y: auto;
+    }
+    .dialog-box h3 { margin: 0 0 14px; font-size: 18px; }
+    .dialog-box p  { margin: 0 0 18px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+    .dialog-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+
+    /* Edit form */
+    .edit-form { display: flex; flex-direction: column; gap: 12px; }
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-group label { font-size: 13px; font-weight: 600; color: var(--muted); }
+    .form-group input, .form-group textarea, .form-group select {
+      width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px;
+      font-family: inherit; font-size: 14px; color: var(--text); background: #fff;
+    }
+    .form-group textarea { resize: vertical; min-height: 70px; }
+    .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
+      outline: 2px solid var(--primary); outline-offset: 1px;
+    }
+    .form-section-title {
+      font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--muted); border-top: 1px solid #edf1f7; padding-top: 10px; margin-top: 4px;
+    }
+
+    @media (max-width: 600px) {
+      .kv-grid { grid-template-columns: 1fr; gap: 4px; }
+      .kv-grid dt { margin-top: 8px; font-weight: 600; color: var(--text); }
+      .kv-grid dd { margin-bottom: 8px; border-bottom: 1px solid #edf1f7; padding-bottom: 8px; }
+      .topbar { flex-direction: column; align-items: stretch; }
+      .topbar-left, .topbar-right { justify-content: center; }
+      .content { padding: 8px; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<header class="topbar">
+  <div class="topbar-left">
+    <a class="link-btn" href="{{ return_to }}">&#8592; Back</a>
+    <a class="link-btn" id="prev-btn" href="#" style="display:none;">&#8592; Prev</a>
+    <a class="link-btn" id="next-btn" href="#" style="display:none;">Next &#8594;</a>
+  </div>
+  <div class="topbar-right">
+    <button id="edit-btn" class="btn primary">Edit</button>
+    <button id="favorite-btn" class="btn favorite {% if property.is_favorite %}active{% endif %}">
+      {% if property.is_favorite %}&#9733; Favorited{% else %}&#9734; Favorite{% endif %}
+    </button>
+    <button id="delete-btn" class="btn danger">&#128465; Delete</button>
+    <a class="link-btn" href="/logout">Logout</a>
+  </div>
+</header>
+
+<main class="content">
+
+  <div class="property-heading">
+    <h1>{{ property.display_name }}</h1>
+    <div class="subtitle">
+      APN: {{ property.apn }}{% if property.city %} &bull; {{ property.city }}{% endif %}
+    </div>
+  </div>
+
+  <!-- Satellite Map -->
+  <div class="streetview-block" id="streetview-block">
+    {% if property.streetview_image_path %}
+    <a href="{{ property.streetview_maps_url }}" target="_blank" rel="noopener" title="Open in Google Maps">
+      <img
+        src="/api/streetview/{{ property.apn }}"
+        alt="Satellite map of {{ property.display_name }}"
+        id="streetview-img"
+        onerror="handleStreetviewError()"
+      />
+    </a>
+    {% else %}
+    <div class="streetview-placeholder">
+      <div style="font-size:28px;margin-bottom:8px;">&#127968;</div>
+      <div>No map image captured yet.</div>
+      {% if property.streetview_maps_url %}
+      <div style="margin-top:8px;">
+        <a href="{{ property.streetview_maps_url }}" target="_blank" rel="noopener">View on Google Maps &#8594;</a>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Outreach Status -->
+  <div class="panel">
+    <h2>Outreach Status</h2>
+    <div class="outreach-row">
+      <span class="outreach-badge stage-{{ property.outreach_stage }}" id="outreach-badge">
+        {{ property.outreach_stage | replace("_", " ") | title }}
+      </span>
+      <span style="font-size:13px;color:var(--muted);">Use Edit to change stage</span>
+    </div>
+  </div>
+
+  <!-- Contact Info -->
+  <div class="panel">
+    <h2>Contact Info</h2>
+    <dl class="kv-grid">
+      <dt>Owner Name</dt>
+      <dd id="disp-owner_name">{{ property.owner_name or "-" }}</dd>
+      <dt>Phone</dt>
+      <dd id="disp-owner_phone">{{ property.owner_phone or "-" }}</dd>
+      <dt>Email</dt>
+      <dd id="disp-owner_email">{{ property.owner_email or "-" }}</dd>
+    </dl>
+  </div>
+
+  <!-- Property Information -->
+  <div class="panel">
+    <h2>Property Information</h2>
+    <dl class="kv-grid">
+      <dt>Location</dt>
+      <dd>{{ property.location_of_property or "-" }}</dd>
+      <dt>APN</dt>
+      <dd>{{ property.apn }}</dd>
+      <dt>Parcel #</dt>
+      <dd>{{ property.parcel_number or "-" }}</dd>
+      <dt>Tracer #</dt>
+      <dd>{{ property.tracer_number or "-" }}</dd>
+      <dt>Tax Year</dt>
+      <dd>{{ property.tax_year or "-" }}</dd>
+      <dt>Last Payment</dt>
+      <dd>{{ property.last_payment or "-" }}</dd>
+      <dt>Delinquent</dt>
+      <dd>{{ property.delinquent }}</dd>
+      <dt>Power</dt>
+      <dd>{{ property.power_status }}</dd>
+      <dt>VPT</dt>
+      <dd>{{ property.has_vpt }}</dd>
+      <dt>Condition Score</dt>
+      <dd id="disp-condition_score">
+        {% if property.condition_score is not none %}
+        <span class="{% if property.condition_score > 6.0 %}score-bad{% else %}score-good{% endif %}">
+          {{ "%.1f"|format(property.condition_score) }}
+        </span>
+        {% else %}-{% endif %}
+      </dd>
+      <dt>Condition Notes</dt>
+      <dd id="disp-condition_notes" style="white-space:pre-wrap;">{{ property.condition_notes or "-" }}</dd>
+      <dt>Occupancy Type</dt>
+      <dd id="disp-prop_occupancy_type">{{ property.prop_occupancy_type or "-" }}</dd>
+      <dt>Ownership Type</dt>
+      <dd id="disp-prop_ownership_type">{{ property.prop_ownership_type or "-" }}</dd>
+      <dt>Last Sale Date</dt>
+      <dd>{{ property.prop_last_sale_date or "-" }}</dd>
+      <dt>Primary Resident</dt>
+      <dd>{{ property.primary_resident_name or "-" }}</dd>
+      <dt>Primary Resident Age</dt>
+      <dd>{{ property.primary_resident_age or "-" }}</dd>
+      <dt>Deceased Count</dt>
+      <dd>{% if property.deceased_count is not none %}{{ property.deceased_count }}{% else %}-{% endif %}</dd>
+      <dt>Research Status</dt>
+      <dd>{{ property.research_status }}</dd>
+      <dt>Mailing Address</dt>
+      <dd>{{ property.mailing_address or "-" }}</dd>
+      <dt>Situs Address</dt>
+      <dd>{{ property.situs_address or "-" }}</dd>
+      <dt>Situs City</dt>
+      <dd>{{ property.situs_city or "-" }}</dd>
+      <dt>Situs Zip</dt>
+      <dd>{{ property.situs_zip or "-" }}</dd>
+      <dt>Important Notes</dt>
+      <dd id="disp-important_notes" style="white-space:pre-wrap;">{{ property.important_notes or "-" }}</dd>
+    </dl>
+  </div>
+
+  <!-- Research Links -->
+  <div class="panel">
+    <h2>Research Links</h2>
+    <div class="links-list">
+      {% if links %}
+      {% for link in links %}
+      <div class="link-item">
+        <div class="lbl">{{ link.label }}</div>
+        <a href="{{ link.url }}" target="_blank" rel="noopener">Open &#8594;</a>
+      </div>
+      {% endfor %}
+      {% else %}
+      <div style="color:var(--muted);font-size:14px;">No research links available yet.</div>
+      {% endif %}
+    </div>
+  </div>
+
+</main>
+
+<!-- Edit Dialog -->
+<div class="dialog-overlay" id="edit-dialog-overlay">
+  <div class="dialog-box">
+    <h3>Edit Property</h3>
+    <div class="edit-form">
+
+      <div class="form-section-title">Outreach</div>
+      <div class="form-group">
+        <label for="edit-outreach_stage">Outreach Stage</label>
+        <select id="edit-outreach_stage">
+          <option value="identified">Identified</option>
+          <option value="qualified">Qualified</option>
+          <option value="outreach_ready">Outreach Ready</option>
+          <option value="contacted">Contacted</option>
+          <option value="responding">Responding</option>
+          <option value="negotiating">Negotiating</option>
+          <option value="partnered">Partnered</option>
+          <option value="declined">Declined</option>
+          <option value="no_response">No Response</option>
+        </select>
+      </div>
+
+      <div class="form-section-title">Contact Info</div>
+      <div class="form-group">
+        <label for="edit-owner_name">Owner Name</label>
+        <input type="text" id="edit-owner_name" />
+      </div>
+      <div class="form-group">
+        <label for="edit-owner_phone">Phone</label>
+        <input type="text" id="edit-owner_phone" />
+      </div>
+      <div class="form-group">
+        <label for="edit-owner_email">Email</label>
+        <input type="email" id="edit-owner_email" />
+      </div>
+
+      <div class="form-section-title">Property Details</div>
+      <div class="form-group">
+        <label for="edit-prop_occupancy_type">Occupancy Type</label>
+        <input type="text" id="edit-prop_occupancy_type" />
+      </div>
+      <div class="form-group">
+        <label for="edit-prop_ownership_type">Ownership Type</label>
+        <input type="text" id="edit-prop_ownership_type" />
+      </div>
+      <div class="form-group">
+        <label for="edit-condition_score">Condition Score (0&ndash;10)</label>
+        <input type="number" id="edit-condition_score" min="0" max="10" step="0.1" />
+      </div>
+      <div class="form-group">
+        <label for="edit-condition_notes">Condition Notes</label>
+        <textarea id="edit-condition_notes"></textarea>
+      </div>
+
+      <div class="form-section-title">Notes</div>
+      <div class="form-group">
+        <label for="edit-important_notes">Important Notes</label>
+        <textarea id="edit-important_notes"></textarea>
+      </div>
+
+    </div>
+    <div class="dialog-actions">
+      <button id="edit-cancel-btn" class="btn">Cancel</button>
+      <button id="edit-save-btn" class="btn primary">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Dialog -->
+<div class="dialog-overlay" id="delete-dialog-overlay">
+  <div class="dialog-box">
+    <h3 style="color:var(--danger);">Delete Property</h3>
+    <p>Permanently remove <strong>{{ property.location_of_property or property.apn }}</strong>
+      (APN: {{ property.apn }}) from the database? This cannot be undone.</p>
+    <div class="dialog-actions">
+      <button id="delete-cancel-btn" class="btn">Cancel</button>
+      <button id="delete-confirm-btn" class="btn danger">Delete</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var apn = {{ property.apn | tojson }};
+  var returnTo = {{ return_to | tojson }};
+  var isFavorite = {{ property.is_favorite | tojson | default('false') }};
+
+  // -- Prev / Next from localStorage -----------------------------------------
+  (function () {
+    try {
+      var list = JSON.parse(localStorage.getItem("barn_apn_list") || "[]");
+      var idx = list.findIndex(function(item) { return item.apn === apn; });
+      if (idx === -1 || list.length < 2) return;
+      var buildUrl = function(item) {
+        return "/property/" + encodeURIComponent(item.apn) + "?return_to=" + encodeURIComponent(returnTo);
+      };
+      if (idx > 0) {
+        var prev = list[idx - 1];
+        var prevBtn = document.getElementById("prev-btn");
+        prevBtn.href = buildUrl(prev);
+        prevBtn.title = prev.address;
+        prevBtn.style.display = "inline-flex";
+      }
+      if (idx < list.length - 1) {
+        var next = list[idx + 1];
+        var nextBtn = document.getElementById("next-btn");
+        nextBtn.href = buildUrl(next);
+        nextBtn.title = next.address;
+        nextBtn.style.display = "inline-flex";
+      }
+    } catch (e) {}
+  })();
+
+  // -- Street view error fallback --------------------------------------------
+  function handleStreetviewError() {
+    var block = document.getElementById("streetview-block");
+    var mapsUrl = {{ property.streetview_maps_url | tojson }};
+    var placeholder = document.createElement("div");
+    placeholder.className = "streetview-placeholder";
+    placeholder.innerHTML = '<div style="font-size:28px;margin-bottom:8px;">&#127968;</div>'
+      + '<div>Map image not available.</div>';
+    if (mapsUrl) {
+      var linkDiv = document.createElement("div");
+      linkDiv.style.marginTop = "8px";
+      var a = document.createElement("a");
+      a.href = mapsUrl;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.textContent = "View on Google Maps \u2192";
+      linkDiv.appendChild(a);
+      placeholder.appendChild(linkDiv);
+    }
+    block.innerHTML = "";
+    block.appendChild(placeholder);
+  }
+
+  // -- Favorite --------------------------------------------------------------
+  var favoriteBtn = document.getElementById("favorite-btn");
+  function renderFavoriteBtn() {
+    favoriteBtn.classList.toggle("active", isFavorite);
+    favoriteBtn.textContent = isFavorite ? "\u2605 Favorited" : "\u2606 Favorite";
+  }
+  favoriteBtn.addEventListener("click", function() {
+    fetch("/api/favorites/" + encodeURIComponent(apn) + "/toggle", { method: "POST" })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.status !== "ok") throw new Error(data.error || "Failed");
+        isFavorite = Boolean(data.favorited);
+        renderFavoriteBtn();
+      })
+      .catch(function(err) { alert("Error: " + err.message); });
+  });
+
+  // -- Delete ----------------------------------------------------------------
+  var deleteOverlay = document.getElementById("delete-dialog-overlay");
+  document.getElementById("delete-btn").addEventListener("click", function() { deleteOverlay.classList.add("open"); });
+  document.getElementById("delete-cancel-btn").addEventListener("click", function() { deleteOverlay.classList.remove("open"); });
+  deleteOverlay.addEventListener("click", function(e) { if (e.target === deleteOverlay) deleteOverlay.classList.remove("open"); });
+  document.getElementById("delete-confirm-btn").addEventListener("click", function() {
+    var btn = this;
+    btn.disabled = true; btn.textContent = "Deleting\u2026";
+    fetch("/api/property/" + encodeURIComponent(apn), { method: "DELETE" })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.status !== "ok") throw new Error(data.message || "Delete failed");
+        window.location.href = returnTo;
+      })
+      .catch(function(err) {
+        alert("Error: " + err.message);
+        btn.disabled = false; btn.textContent = "Delete";
+        deleteOverlay.classList.remove("open");
+      });
+  });
+
+  // -- Edit Modal ------------------------------------------------------------
+  var editableFields = [
+    "outreach_stage", "owner_name", "owner_phone", "owner_email",
+    "prop_occupancy_type", "prop_ownership_type",
+    "condition_score", "condition_notes", "important_notes"
+  ];
+
+  var current = {
+    outreach_stage:      {{ property.outreach_stage | tojson }},
+    owner_name:          {{ property.owner_name | tojson }},
+    owner_phone:         {{ property.owner_phone | tojson }},
+    owner_email:         {{ property.owner_email | tojson }},
+    prop_occupancy_type: {{ property.prop_occupancy_type | tojson }},
+    prop_ownership_type: {{ property.prop_ownership_type | tojson }},
+    condition_score:     {{ property.condition_score | tojson if property.condition_score is not none else 'null' }},
+    condition_notes:     {{ property.condition_notes | tojson }},
+    important_notes:     {{ property.important_notes | tojson }}
+  };
+
+  var editOverlay  = document.getElementById("edit-dialog-overlay");
+  var editSaveBtn  = document.getElementById("edit-save-btn");
+  var editCancelBtn = document.getElementById("edit-cancel-btn");
+
+  function openEditModal() {
+    editableFields.forEach(function(field) {
+      var el = document.getElementById("edit-" + field);
+      if (!el) return;
+      el.value = current[field] != null ? current[field] : "";
+    });
+    editOverlay.classList.add("open");
+  }
+  function closeEditModal() { editOverlay.classList.remove("open"); }
+
+  document.getElementById("edit-btn").addEventListener("click", openEditModal);
+  editCancelBtn.addEventListener("click", closeEditModal);
+  editOverlay.addEventListener("click", function(e) { if (e.target === editOverlay) closeEditModal(); });
+
+  // -- Keyboard navigation ---------------------------------------------------
+  document.addEventListener("keydown", function(e) {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    var active = document.activeElement;
+    if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT")) return;
+    if (document.querySelector(".dialog-overlay.open")) return;
+    if (e.key === "ArrowLeft") {
+      var prevBtn = document.getElementById("prev-btn");
+      if (prevBtn && prevBtn.style.display !== "none") { e.preventDefault(); window.location.href = prevBtn.href; }
+    } else if (e.key === "ArrowRight") {
+      var nextBtn = document.getElementById("next-btn");
+      if (nextBtn && nextBtn.style.display !== "none") { e.preventDefault(); window.location.href = nextBtn.href; }
+    }
+  });
+
+  editSaveBtn.addEventListener("click", function() {
+    var payload = {};
+    editableFields.forEach(function(field) {
+      var el = document.getElementById("edit-" + field);
+      if (!el) return;
+      payload[field] = el.value.trim() === "" ? null : el.value.trim();
+    });
+    if (payload.condition_score !== null) {
+      var n = parseFloat(payload.condition_score);
+      payload.condition_score = isNaN(n) ? null : n;
+    }
+
+    editSaveBtn.disabled = true;
+    editSaveBtn.textContent = "Saving\u2026";
+
+    fetch("/api/properties/" + encodeURIComponent(apn) + "/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.status !== "ok") throw new Error(data.message || "Save failed");
+
+      editableFields.forEach(function(field) {
+        current[field] = payload[field];
+        var dispEl = document.getElementById("disp-" + field);
+        if (!dispEl) return;
+        if (field === "condition_score") {
+          var val = payload.condition_score;
+          if (val != null) {
+            var cls = val > 6.0 ? "score-bad" : "score-good";
+            dispEl.innerHTML = '<span class="' + cls + '">' + parseFloat(val).toFixed(1) + '</span>';
+          } else {
+            dispEl.textContent = "-";
+          }
+        } else {
+          dispEl.textContent = payload[field] != null ? payload[field] : "-";
+        }
+      });
+
+      var stage = payload.outreach_stage || "identified";
+      var badge = document.getElementById("outreach-badge");
+      if (badge) {
+        badge.className = "outreach-badge stage-" + stage;
+        badge.textContent = stage.replace(/_/g, " ").replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+      }
+
+      closeEditModal();
+    })
+    .catch(function(err) { alert("Error saving: " + err.message); })
+    .finally(function() {
+      editSaveBtn.disabled = false;
+      editSaveBtn.textContent = "Save";
+    });
+  });
+</script>
+{% endblock %}

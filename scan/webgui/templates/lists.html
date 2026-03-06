@@ -1,0 +1,599 @@
+{% extends "base.html" %}
+{% block title %}My Lists – BARN{% endblock %}
+
+{% block head %}
+<style>
+    a {
+        color: #0a6a9a;
+        text-decoration: none;
+    }
+
+    a:hover {
+        text-decoration: underline;
+    }
+
+    h1,
+    h2 {
+        margin: 0 0 16px 0;
+    }
+
+    .create-form {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 24px;
+        padding: 16px;
+        background: #f8f9fa;
+        border-radius: 8px;
+    }
+
+    .create-form input {
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        flex: 1;
+        max-width: 300px;
+    }
+
+    .create-form button {
+        background: #27ae60;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+    .create-form button:hover {
+        background: #219a52;
+    }
+
+    .lists-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 16px;
+    }
+
+    .list-card {
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 16px;
+        transition: box-shadow 0.2s;
+    }
+
+    .list-card:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .list-card h3 {
+        margin: 0 0 8px 0;
+    }
+
+    .list-card .meta {
+        color: #666;
+        font-size: 14px;
+        margin-bottom: 12px;
+    }
+
+    .list-card .actions {
+        display: flex;
+        gap: 8px;
+    }
+
+    .btn {
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        text-decoration: none;
+        display: inline-block;
+    }
+
+    .btn-primary {
+        background: #3498db;
+        color: white;
+        border: none;
+    }
+
+    .btn-primary:hover {
+        background: #2980b9;
+        text-decoration: none;
+    }
+
+    .btn-success {
+        background: #27ae60;
+        color: white;
+        border: none;
+    }
+
+    .btn-success:hover {
+        background: #219a52;
+        text-decoration: none;
+    }
+
+    .btn-danger {
+        background: #e74c3c;
+        color: white;
+        border: none;
+    }
+
+    .btn-danger:hover {
+        background: #c0392b;
+    }
+
+    .btn-secondary {
+        background: white;
+        color: #333;
+        border: 1px solid #ddd;
+    }
+
+    .btn-secondary:hover {
+        background: #f8f9fa;
+        text-decoration: none;
+    }
+
+    /* Modal */
+    .modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .modal-overlay.active {
+        display: flex;
+    }
+
+    .modal {
+        background: white;
+        border-radius: 8px;
+        max-width: 800px;
+        max-height: 80vh;
+        width: 90%;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .modal-header {
+        padding: 16px;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .modal-header h3 {
+        margin: 0;
+    }
+
+    .modal-close {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: #666;
+    }
+
+    .modal-body {
+        padding: 16px;
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    .modal-footer {
+        padding: 16px;
+        border-top: 1px solid #ddd;
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+    }
+
+    .property-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .property-table th,
+    .property-table td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+        font-size: 13px;
+    }
+
+    .property-table th {
+        background: #f4f4f4;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 40px;
+        color: #666;
+    }
+
+    .table-container {
+        overflow-x: auto;
+        width: 100%;
+    }
+
+    @media (max-width: 768px) {
+        .create-form {
+            flex-direction: column;
+        }
+
+        .create-form input {
+            max-width: none;
+        }
+
+        .lists-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .property-table {
+            min-width: 500px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block sidenav %}
+<nav class="sidenav">
+  <div class="sidenav-label">Search</div>
+  <a href="/search">List View</a>
+  <a href="/map">Map View</a>
+  <a href="/lists" class="active">My Lists</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h1>My Lists</h1>
+
+<div class="create-form">
+    <input type="text" id="new-list-name" placeholder="New list name..." />
+    <button onclick="createList()">+ Create List</button>
+</div>
+
+<div class="lists-grid" id="lists-container">
+    <p style="color: #666;">Loading lists...</p>
+</div>
+
+<!-- List Detail Modal -->
+<div class="modal-overlay" id="list-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 id="modal-list-name">List Name</h3>
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="table-container">
+                <table class="property-table">
+                    <thead>
+                        <tr>
+                            <th>Address</th>
+                            <th>City</th>
+                            <th>APN</th>
+                            <th>VPT</th>
+                            <th>Condition</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="modal-properties">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <div>
+                <span id="modal-count" style="color: #666;"></span>
+            </div>
+            <div>
+                <button class="btn btn-success" id="open-map-btn" onclick="openCurrentListMap()">
+                    🗺️ Map
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const FAVORITES_VIEW_ID = "__favorites__";
+    let lists = [];
+    let favoriteApns = [];
+    let currentListId = null;
+
+    document.addEventListener('DOMContentLoaded', loadLists);
+
+    async function loadLists() {
+        let listsError = null;
+        let favoritesError = null;
+
+        try {
+            const listsRes = await fetch('/api/lists');
+            if (!listsRes.ok) {
+                throw new Error(`Lists request failed (${listsRes.status})`);
+            }
+            const listsData = await listsRes.json();
+            lists = Array.isArray(listsData) ? listsData : [];
+        } catch (err) {
+            lists = [];
+            listsError = err;
+        }
+
+        try {
+            const favoritesRes = await fetch('/api/favorites');
+            if (!favoritesRes.ok) {
+                throw new Error(`Favorites request failed (${favoritesRes.status})`);
+            }
+            const favoritesData = await favoritesRes.json();
+            favoriteApns = Array.isArray(favoritesData) ? favoritesData : [];
+        } catch (err) {
+            favoriteApns = [];
+            favoritesError = err;
+        }
+
+        renderLists();
+
+        if (!listsError && !favoritesError) {
+            return;
+        }
+
+        const container = document.getElementById('lists-container');
+        const warn = document.createElement('p');
+        warn.style.color = '#e67e22';
+        warn.style.margin = '0 0 12px 0';
+        const parts = [];
+        if (listsError) parts.push(`lists: ${listsError.message}`);
+        if (favoritesError) parts.push(`favorites: ${favoritesError.message}`);
+        warn.textContent = `Some data failed to load (${parts.join(' | ')}).`;
+        container.prepend(warn);
+    }
+
+    function renderLists() {
+        const container = document.getElementById('lists-container');
+
+        const cards = [];
+        cards.push(`
+      <div class="list-card">
+        <h3>Favorites</h3>
+        <div class="meta">
+          ${favoriteApns.length} properties • Global favorites table
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" onclick="viewFavorites()">View / Edit</button>
+        </div>
+      </div>
+    `);
+
+        cards.push(...lists.map(list => `
+      <div class="list-card">
+        <h3>${escapeHtml(list.name)}</h3>
+        <div class="meta">
+          ${list.property_count} properties
+          ${list.description ? ' • ' + escapeHtml(list.description) : ''}
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" onclick="viewList(${list.id})">View</button>
+          <button class="btn btn-success" onclick="openListMap(${list.id})"
+            ${list.property_count === 0 ? 'disabled' : ''}>🗺️ Map</button>
+          <button class="btn btn-danger" onclick="deleteList(${list.id})">Delete</button>
+        </div>
+      </div>
+    `));
+
+        if (lists.length === 0) {
+            cards.push(`
+        <div class="empty-state">
+          <h2>No custom lists yet</h2>
+          <p>Create a list above, then go to Properties to select and add properties.</p>
+        </div>
+      `);
+        }
+
+        container.innerHTML = cards.join('');
+    }
+
+    function createList() {
+        const nameInput = document.getElementById('new-list-name');
+        const name = nameInput.value.trim();
+
+        if (!name) {
+            alert('Please enter a list name');
+            return;
+        }
+
+        fetch('/api/lists', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name })
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    lists.push(data.data);
+                    nameInput.value = '';
+                    renderLists();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(err => alert('Error creating list: ' + err.message));
+    }
+
+    function deleteList(id) {
+        if (!confirm('Delete this list? Properties will not be deleted.')) return;
+
+        fetch(`/api/lists/${id}`, { method: 'DELETE' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    lists = lists.filter(l => l.id !== id);
+                    renderLists();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(err => alert('Error deleting list: ' + err.message));
+    }
+
+    function openModalLoading() {
+        document.getElementById('list-modal').classList.add('active');
+        document.getElementById('modal-properties').innerHTML = '<tr><td colspan="6">Loading...</td></tr>';
+    }
+
+    function setMapButtonVisible(isVisible) {
+        const mapBtn = document.getElementById('open-map-btn');
+        mapBtn.style.display = isVisible ? 'inline-block' : 'none';
+        if (!isVisible) {
+            mapBtn.disabled = true;
+        }
+    }
+
+    function formatConditionScore(value) {
+        if (value === null || value === undefined || Number.isNaN(Number(value))) {
+            return '-';
+        }
+        return Number(value).toFixed(1);
+    }
+
+    function renderModalRows(properties, actionLabel) {
+        if (!properties || properties.length === 0) {
+            document.getElementById('modal-properties').innerHTML =
+                '<tr><td colspan="6" style="text-align: center; color: #666;">No properties in this view</td></tr>';
+            return;
+        }
+        document.getElementById('modal-properties').innerHTML = properties.map(p => `
+          <tr>
+            <td>${escapeHtml(p.address || '-')}</td>
+            <td>${escapeHtml(p.city || '-')}</td>
+            <td>${escapeHtml(p.apn || '')}</td>
+            <td>${p.has_vpt ? 'Yes' : 'No'}</td>
+            <td>${formatConditionScore(p.condition_score)}</td>
+            <td>
+              <button class="btn btn-secondary" onclick="removeFromCurrentView('${encodeURIComponent(p.apn || '')}')">${escapeHtml(actionLabel)}</button>
+            </td>
+          </tr>
+        `).join('');
+    }
+
+    function viewList(id) {
+        currentListId = id;
+        openModalLoading();
+        setMapButtonVisible(true);
+
+        fetch(`/api/lists/${id}`)
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('modal-list-name').textContent = data.name;
+                document.getElementById('modal-count').textContent = `${data.properties.length} properties`;
+                document.getElementById('open-map-btn').disabled = data.properties.length === 0;
+                renderModalRows(data.properties || [], 'Remove');
+            })
+            .catch(err => {
+                document.getElementById('modal-properties').innerHTML =
+                    `<tr><td colspan="6" style="color: #e74c3c;">Error: ${err.message}</td></tr>`;
+            });
+    }
+
+    function viewFavorites() {
+        currentListId = FAVORITES_VIEW_ID;
+        openModalLoading();
+        setMapButtonVisible(false);
+
+        fetch('/api/favorites/details')
+            .then(res => res.json())
+            .then(data => {
+                const props = Array.isArray(data.properties) ? data.properties : [];
+                document.getElementById('modal-list-name').textContent = 'Favorites';
+                document.getElementById('modal-count').textContent = `${props.length} properties`;
+                renderModalRows(props, 'Unfavorite');
+            })
+            .catch(err => {
+                document.getElementById('modal-properties').innerHTML =
+                    `<tr><td colspan="6" style="color: #e74c3c;">Error: ${err.message}</td></tr>`;
+            });
+    }
+
+    function closeModal() {
+        document.getElementById('list-modal').classList.remove('active');
+        currentListId = null;
+    }
+
+    function removeFromCurrentView(encodedApn) {
+        const apn = decodeURIComponent(encodedApn || '');
+        if (!apn || !currentListId) return;
+
+        if (currentListId === FAVORITES_VIEW_ID) {
+            fetch(`/api/favorites/${encodeURIComponent(apn)}`, { method: 'DELETE' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'ok') {
+                        viewFavorites();
+                        loadLists();
+                    } else {
+                        alert('Error: ' + (data.message || 'Could not unfavorite property'));
+                    }
+                })
+                .catch(err => alert('Error: ' + err.message));
+            return;
+        }
+
+        fetch(`/api/lists/${currentListId}/remove-property/${encodeURIComponent(apn)}`, {
+            method: 'DELETE'
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    viewList(currentListId);
+                    loadLists();
+                }
+            })
+            .catch(err => alert('Error: ' + err.message));
+    }
+
+    function openCurrentListMap() {
+        if (!currentListId || currentListId === FAVORITES_VIEW_ID) return;
+        openListMap(currentListId);
+    }
+
+    function openListMap(listId) {
+        if (!listId) return;
+        window.location.href = `/map?list_id=${encodeURIComponent(String(listId))}`;
+    }
+
+    function generateRouteForList(listId) {
+        fetch(`/api/lists/${listId}/route`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.url) {
+                    if (!data.optimized) {
+                        alert(`Note: This list has ${data.property_count} properties. Only the first 25 are included in this route.`);
+                    }
+                    window.open(data.url, '_blank');
+                } else {
+                    alert('Error: ' + (data.error || 'Could not generate route'));
+                }
+            })
+            .catch(err => alert('Error generating route: ' + err.message));
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Close modal on outside click
+    document.getElementById('list-modal').addEventListener('click', function (e) {
+        if (e.target === this) closeModal();
+    });
+</script>
+{% endblock %}

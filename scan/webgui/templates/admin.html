@@ -1,0 +1,977 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VPT Scanner - Admin</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f6fa;
+      color: #2c3e50;
+      line-height: 1.6;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #2c3e50 0%, #1a252f 100%);
+      color: white;
+      padding: 20px 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header h1 {
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    .header-links {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+    }
+
+    .header a {
+      color: #3498db;
+      text-decoration: none;
+    }
+
+    .header a:hover {
+      text-decoration: underline;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 30px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+
+    .card h2 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: #2c3e50;
+      border-bottom: 2px solid #3498db;
+      padding-bottom: 8px;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+
+    .stat-box {
+      background: #f8f9fa;
+      padding: 16px;
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .stat-box .value {
+      font-size: 32px;
+      font-weight: 700;
+      color: #2c3e50;
+    }
+
+    .stat-box .label {
+      font-size: 14px;
+      color: #7f8c8d;
+      margin-top: 4px;
+    }
+
+    .stat-box.running {
+      background: #d5f5e3;
+    }
+
+    .stat-box.running .value {
+      color: #27ae60;
+    }
+
+    .stat-box.stopped {
+      background: #fadbd8;
+    }
+
+    .stat-box.stopped .value {
+      color: #e74c3c;
+    }
+
+    .controls {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    select,
+    button {
+      padding: 12px 20px;
+      font-size: 14px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    select {
+      background: white;
+      border: 2px solid #ddd;
+      min-width: 200px;
+    }
+
+    select:focus {
+      outline: none;
+      border-color: #3498db;
+    }
+
+    button {
+      font-weight: 600;
+    }
+
+    .btn-primary {
+      background: #3498db;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #2980b9;
+    }
+
+    .btn-success {
+      background: #27ae60;
+      color: white;
+    }
+
+    .btn-success:hover {
+      background: #219a52;
+    }
+
+    .btn-danger {
+      background: #e74c3c;
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background: #c0392b;
+    }
+
+    .btn-secondary {
+      background: #95a5a6;
+      color: white;
+    }
+
+    .btn-secondary:hover {
+      background: #7f8c8d;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .city-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .city-tag {
+      background: #ecf0f1;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .city-tag.current {
+      background: #3498db;
+      color: white;
+    }
+
+    .city-tag.completed {
+      background: #27ae60;
+      color: white;
+    }
+
+    .city-tag .count {
+      background: rgba(0, 0, 0, 0.15);
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+    }
+
+    .log {
+      background: #1a1a2e;
+      color: #a8e6cf;
+      padding: 16px;
+      border-radius: 8px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 13px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .log-entry {
+      margin: 4px 0;
+    }
+
+    .log-entry.info {
+      color: #a8e6cf;
+    }
+
+    .log-entry.warn {
+      color: #f9ca24;
+    }
+
+    .log-entry.error {
+      color: #ff7675;
+    }
+
+    .refresh-btn {
+      float: right;
+      background: transparent;
+      color: #3498db;
+      padding: 4px 8px;
+    }
+
+    .supabase-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+    }
+
+    .supabase-status.enabled {
+      background: #d5f5e3;
+      color: #27ae60;
+    }
+
+    .supabase-status.disabled {
+      background: #fadbd8;
+      color: #e74c3c;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    @media (max-width: 768px) {
+      .header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 16px;
+      }
+
+      .header-links {
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .container {
+        padding: 12px;
+      }
+
+      .status-grid {
+        grid-template-columns: minmax(140px, 1fr);
+      }
+
+      .controls select {
+        width: 100%;
+      }
+
+      .controls button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="header">
+    <h1>VPT Scanner Admin</h1>
+    <div class="header-links">
+      <a href="/">← Back to Results</a>
+      <a href="/map">Map View</a>
+      <a href="/outreach">Outreach</a>
+      <span style="color: #aaa; margin-left: 20px;">{{ session.get('user_email', 'User') }}</span>
+      <a href="/logout"
+        style="background: #e74c3c; color: white; padding: 4px 10px; border-radius: 4px; text-decoration: none; font-size: 13px;">Logout</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="card">
+      <h2>Scan Status <button class="refresh-btn" onclick="refreshStatus()">Refresh</button></h2>
+      <div class="status-grid">
+        <div class="stat-box" id="status-box">
+          <div class="value" id="status-text">-</div>
+          <div class="label">Scanner Status</div>
+        </div>
+        <div class="stat-box">
+          <div class="value" id="current-city">-</div>
+          <div class="label">Current City</div>
+        </div>
+        <div class="stat-box">
+          <div class="value" id="total-bills">-</div>
+          <div class="label">Total Records</div>
+        </div>
+        <div class="stat-box">
+          <div class="value" id="vpt-count">-</div>
+          <div class="label">VPT Properties</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Scan Controls</h2>
+      <div class="controls">
+        <select id="city-select">
+          <option value="">Select a city...</option>
+        </select>
+        <button class="btn-primary" onclick="startCityScan()" id="btn-start-city">
+          Scan Selected City
+        </button>
+        <button class="btn-success" onclick="startContinuousScan()" id="btn-continuous">
+          Start Continuous Scan
+        </button>
+        <button class="btn-danger" onclick="stopScan()" id="btn-stop" disabled>
+          Stop Scan
+        </button>
+      </div>
+      <div style="margin-top: 16px;">
+        <span class="supabase-status" id="supabase-status">
+          <span class="dot"></span>
+          <span>Checking...</span>
+        </span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Cities</h2>
+      <div class="city-list" id="city-list">
+        Loading...
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Activity Log</h2>
+      <div class="log" id="log">
+        <div class="log-entry info">Scanner admin panel loaded.</div>
+      </div>
+    </div>
+
+    <!-- Deep Research Section -->
+    <div class="card">
+      <h2>Deep Research (Gemini AI) <button class="refresh-btn" onclick="refreshResearchStatus()">Refresh</button></h2>
+      <div class="status-grid">
+        <div class="stat-box" id="research-status-box">
+          <div class="value" id="research-status-text">-</div>
+          <div class="label">Research Scanner</div>
+        </div>
+        <div class="stat-box">
+          <div class="value" id="research-current">-</div>
+          <div class="label">Current Property</div>
+        </div>
+        <div class="stat-box">
+          <div class="value" id="research-queue">0</div>
+          <div class="label">Queue Length</div>
+        </div>
+        <div class="stat-box">
+          <div class="value" id="research-completed">0</div>
+          <div class="label">Completed</div>
+        </div>
+      </div>
+      <div style="margin-top: 16px; display: flex; gap: 12px; align-items: center;">
+        <span class="supabase-status" id="gemini-api-status">
+          <span class="dot"></span>
+          <span>Checking API...</span>
+        </span>
+        <span style="color: #7f8c8d; font-size: 13px;" id="research-stats">
+          Completed: <span id="research-total-completed">0</span> |
+          Pending: <span id="research-total-pending">0</span> |
+          Failed: <span id="research-total-failed">0</span>
+        </span>
+      </div>
+      <div id="research-warning-banner"
+        style="display:none; margin-top:12px; padding:10px 12px; border-radius:8px; background:#fdecea; border:1px solid #f5c6cb; color:#c0392b; font-size:13px;">
+      </div>
+      <div style="margin-top: 16px;">
+        <p style="font-size: 13px; color: #7f8c8d; margin-bottom: 8px;">
+          To research individual properties, go to the property list and click the Research button on each row, or use
+          bulk actions on favorites or all pending properties.
+        </p>
+        <button class="btn-primary" onclick="researchAllFavorites()" id="btn-research-favorites">
+          🔍 Research All Favorites
+        </button>
+        <button class="btn-success" onclick="researchAllPending()" id="btn-research-all">
+          🔍 Research All Pending
+        </button>
+      </div>
+    </div>
+
+    <!-- Property Condition Scanner -->
+    <div class="card">
+      <h2>Property Condition Scanner (Gemini Vision) <button class="refresh-btn"
+          onclick="refreshConditionStatus()">Refresh</button></h2>
+      <p style="font-size: 13px; color: #7f8c8d; margin-bottom: 12px;">
+        Analyzes Street View images to rate properties on a 1-10 abandonment scale using AI vision.
+      </p>
+      <div class="status-grid">
+        <div class="stat-box" id="condition-status-box">
+          <div class="value" id="condition-status-text">-</div>
+          <div class="label">Condition Scanner</div>
+        </div>
+        <div class="stat-box">
+          <div class="value" id="condition-current">-</div>
+          <div class="label">Current Property</div>
+        </div>
+        <div class="stat-box">
+          <div class="value" id="condition-scanned">0</div>
+          <div class="label">Total Scanned</div>
+        </div>
+        <div class="stat-box">
+          <div class="value" id="condition-poor">0</div>
+          <div class="label">Poor Condition (7+)</div>
+        </div>
+      </div>
+      <div style="margin-top: 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+        <span style="color: #7f8c8d; font-size: 13px;">
+          Average Score: <strong id="condition-avg">-</strong>/10
+        </span>
+        <button class="btn-primary" onclick="scanAllFavoritesCondition()" id="btn-condition-favorites">
+          📷 Scan Favorites
+        </button>
+        <button class="btn-success" onclick="scanAllUnscannedCondition()" id="btn-condition-all">
+          📷 Scan All Unscanned
+        </button>
+      </div>
+    </div>
+
+    <!-- PGE Power Status Scanner -->
+    <div class="card">
+      <h2>PGE Power Status Scanner <button class="refresh-btn" onclick="refreshPgeStatus()">Refresh</button></h2>
+      <p style="font-size: 13px; color: #7f8c8d; margin-bottom: 12px;">
+        Checks PG&E outage map to determine if properties have active power service.
+      </p>
+      <div class="status-grid">
+        <div class="stat-box" id="pge-status-box">
+          <div class="value" id="pge-status-text">-</div>
+          <div class="label">PGE Scanner</div>
+        </div>
+        <div class="stat-box">
+          <div class="value" id="pge-current">-</div>
+          <div class="label">Current Address</div>
+        </div>
+        <div class="stat-box">
+          <div class="value" id="pge-checked">0</div>
+          <div class="label">Checked</div>
+        </div>
+        <div class="stat-box">
+          <div class="value" id="pge-unchecked">0</div>
+          <div class="label">Unchecked</div>
+        </div>
+      </div>
+      <div style="margin-top: 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+        <span style="color: #7f8c8d; font-size: 13px;">
+          Power On: <strong id="pge-power-on" style="color: #27ae60;">0</strong> |
+          Power Off: <strong id="pge-power-off" style="color: #e74c3c;">0</strong>
+        </span>
+        <button class="btn-success" onclick="startPgeScanAll()" id="btn-pge-all">
+          ⚡ Scan All Unchecked
+        </button>
+        <button class="btn-primary" onclick="startPgeScanFavorites()" id="btn-pge-favorites">
+          ⚡ Scan Favorites
+        </button>
+        <button class="btn-danger" onclick="stopPgeScan()" id="btn-pge-stop" disabled>
+          Stop Scan
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let pollInterval = null;
+    let lastResearchWarning = '';
+
+    function log(message, type = 'info') {
+      const logEl = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      const time = new Date().toLocaleTimeString();
+      entry.textContent = `[${time}] ${message}`;
+      logEl.insertBefore(entry, logEl.firstChild);
+    }
+
+    async function refreshStatus() {
+      try {
+        const res = await fetch('/api/scan/status');
+        const data = await res.json();
+
+        // Update status
+        const statusBox = document.getElementById('status-box');
+        const statusText = document.getElementById('status-text');
+        if (data.scanner_available === false) {
+          statusBox.className = 'stat-box';
+          statusText.textContent = 'CLOUD MODE';
+          document.getElementById('btn-stop').disabled = true;
+          document.getElementById('btn-start-city').disabled = true;
+          document.getElementById('btn-continuous').disabled = true;
+        } else if (data.is_running) {
+          statusBox.className = 'stat-box running';
+          statusText.textContent = data.continuous_mode ? 'CONTINUOUS' : 'RUNNING';
+          document.getElementById('btn-stop').disabled = !data.continuous_mode;
+          document.getElementById('btn-start-city').disabled = true;
+          document.getElementById('btn-continuous').disabled = true;
+        } else {
+          statusBox.className = 'stat-box stopped';
+          statusText.textContent = 'STOPPED';
+          document.getElementById('btn-stop').disabled = true;
+          document.getElementById('btn-start-city').disabled = false;
+          document.getElementById('btn-continuous').disabled = false;
+        }
+
+        // Update current city
+        document.getElementById('current-city').textContent = data.current_city || '-';
+
+        // Update stats
+        document.getElementById('total-bills').textContent = (data.total_bills || 0).toLocaleString();
+        document.getElementById('vpt-count').textContent = (data.vpt_count || 0).toLocaleString();
+
+        // Update city select
+        const select = document.getElementById('city-select');
+        const currentValue = select.value;
+        select.innerHTML = '<option value="">Select a city...</option>';
+        (data.available_cities || []).forEach(city => {
+          const opt = document.createElement('option');
+          opt.value = city;
+          opt.textContent = city;
+          if (city === currentValue) opt.selected = true;
+          select.appendChild(opt);
+        });
+
+        // Update city list
+        const cityList = document.getElementById('city-list');
+        cityList.innerHTML = '';
+        const cityCounts = data.city_counts || {};
+        const completed = data.cities_completed || [];
+        const current = data.current_city;
+
+        Object.entries(cityCounts).sort((a, b) => b[1] - a[1]).forEach(([city, count]) => {
+          const tag = document.createElement('span');
+          tag.className = 'city-tag';
+          if (city === current) tag.classList.add('current');
+          else if (completed.includes(city)) tag.classList.add('completed');
+          tag.innerHTML = `${city} <span class="count">${count}</span>`;
+          cityList.appendChild(tag);
+        });
+
+        if (cityList.innerHTML === '') {
+          cityList.textContent = 'No data yet';
+        }
+
+        // Check Supabase status
+        const supStatus = document.getElementById('supabase-status');
+        // We can't directly check from frontend, so just show based on whether we have data
+        supStatus.className = 'supabase-status enabled';
+        supStatus.innerHTML = '<span class="dot"></span><span>Cloud Sync Active</span>';
+
+      } catch (err) {
+        console.error('Error fetching status:', err);
+        log('Error fetching status: ' + err.message, 'error');
+      }
+    }
+
+    async function startCityScan() {
+      const city = document.getElementById('city-select').value;
+      if (!city) {
+        log('Please select a city', 'warn');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/scan/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ city: city })
+        });
+        const data = await res.json();
+        log(data.message, data.status === 'ok' ? 'info' : 'error');
+        refreshStatus();
+      } catch (err) {
+        log('Error starting scan: ' + err.message, 'error');
+      }
+    }
+
+    async function startContinuousScan() {
+      try {
+        const res = await fetch('/api/scan/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ continuous: true })
+        });
+        const data = await res.json();
+        log(data.message, data.status === 'ok' ? 'info' : 'error');
+        refreshStatus();
+      } catch (err) {
+        log('Error starting scan: ' + err.message, 'error');
+      }
+    }
+
+    async function stopScan() {
+      try {
+        const res = await fetch('/api/scan/stop', {
+          method: 'POST'
+        });
+        const data = await res.json();
+        log(data.message, data.status === 'ok' ? 'info' : 'warn');
+        refreshStatus();
+      } catch (err) {
+        log('Error stopping scan: ' + err.message, 'error');
+      }
+    }
+
+    // Initial load
+    refreshStatus();
+
+    // Poll every 5 seconds
+    pollInterval = setInterval(refreshStatus, 5000);
+
+    // ========================================
+    // Deep Research Functions
+    // ========================================
+
+    async function refreshResearchStatus() {
+      try {
+        const res = await fetch('/api/research/status');
+        const data = await res.json();
+
+        // Update status box
+        const statusBox = document.getElementById('research-status-box');
+        const statusText = document.getElementById('research-status-text');
+
+        if (data.scanner_available === false) {
+          statusBox.className = 'stat-box';
+          statusText.textContent = 'CLOUD MODE';
+        } else if (data.is_running) {
+          statusBox.className = 'stat-box running';
+          statusText.textContent = 'RUNNING';
+        } else if (!data.api_configured) {
+          statusBox.className = 'stat-box stopped';
+          statusText.textContent = 'NO API KEY';
+        } else if (data.warning_message) {
+          statusBox.className = 'stat-box stopped';
+          statusText.textContent = 'HALTED';
+        } else {
+          statusBox.className = 'stat-box';
+          statusText.textContent = 'IDLE';
+        }
+
+        // Update current & queue
+        document.getElementById('research-current').textContent =
+          data.current_apn ? data.current_apn.substring(0, 15) + '...' : '-';
+        document.getElementById('research-queue').textContent = data.queue_length || 0;
+        document.getElementById('research-completed').textContent = data.completed || 0;
+
+        // Update totals
+        document.getElementById('research-total-completed').textContent = data.total_completed || 0;
+        document.getElementById('research-total-pending').textContent = data.total_pending || 0;
+        document.getElementById('research-total-failed').textContent = data.total_failed || 0;
+
+        // Update API status
+        const apiStatus = document.getElementById('gemini-api-status');
+        if (data.api_configured) {
+          apiStatus.className = 'supabase-status enabled';
+          apiStatus.innerHTML = '<span class="dot"></span><span>Gemini API Connected</span>';
+        } else {
+          apiStatus.className = 'supabase-status disabled';
+          apiStatus.innerHTML = '<span class="dot"></span><span>API Key Not Set</span>';
+        }
+
+        // Show fatal CBC fetch warnings directly in Deep Research section.
+        const warningBanner = document.getElementById('research-warning-banner');
+        const warning = data.warning_message || '';
+        if (warning) {
+          warningBanner.style.display = 'block';
+          warningBanner.textContent = warning;
+          if (warning !== lastResearchWarning) {
+            log('Deep Research warning: ' + warning, 'warn');
+          }
+        } else {
+          warningBanner.style.display = 'none';
+          warningBanner.textContent = '';
+        }
+        lastResearchWarning = warning;
+
+      } catch (err) {
+        console.error('Error fetching research status:', err);
+      }
+    }
+
+    async function researchAllFavorites() {
+      try {
+        // First get all favorites
+        const favRes = await fetch('/api/favorites');
+        const favorites = await favRes.json();
+
+        if (!favorites || favorites.length === 0) {
+          log('No favorites to research', 'warn');
+          return;
+        }
+
+        // Start research for all favorites
+        const res = await fetch('/api/research/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apns: favorites })
+        });
+        const data = await res.json();
+
+        log(data.message, data.status === 'ok' ? 'info' : 'error');
+        refreshResearchStatus();
+
+      } catch (err) {
+        log('Error starting research: ' + err.message, 'error');
+      }
+    }
+
+    async function researchAllPending() {
+      if (!confirm('This will start deep research for ALL properties that do not have a completed report. This may take a long time and use significant API quota. Continue?')) {
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/research/start-all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await res.json();
+
+        log(data.message || 'Research start-all request sent', data.status === 'ok' ? 'info' : 'error');
+        refreshResearchStatus();
+
+      } catch (err) {
+        log('Error starting research for all properties: ' + err.message, 'error');
+      }
+    }
+
+    // Initial research status load + polling
+    refreshResearchStatus();
+    setInterval(refreshResearchStatus, 5000);
+
+    // ============================================
+    // Property Condition Scanner Functions
+    // ============================================
+
+    async function refreshConditionStatus() {
+      try {
+        const res = await fetch('/api/condition/status');
+        const data = await res.json();
+
+        const statusBox = document.getElementById('condition-status-box');
+        const statusText = document.getElementById('condition-status-text');
+
+        if (data.scanner_available === false) {
+          statusBox.classList.remove('active');
+          statusText.textContent = 'CLOUD MODE';
+        } else if (data.is_running) {
+          statusBox.classList.add('active');
+          statusText.textContent = 'SCANNING';
+        } else {
+          statusBox.classList.remove('active');
+          statusText.textContent = data.api_configured ? 'IDLE' : 'NO API KEY';
+        }
+
+        document.getElementById('condition-current').textContent = data.current_apn || '-';
+        document.getElementById('condition-scanned').textContent = data.total_scanned || 0;
+        document.getElementById('condition-poor').textContent = data.poor_condition || 0;
+        document.getElementById('condition-avg').textContent = data.average_score || '-';
+
+      } catch (err) {
+        console.error('Error fetching condition status:', err);
+      }
+    }
+
+    async function scanAllFavoritesCondition() {
+      try {
+        const favRes = await fetch('/api/favorites');
+        const favorites = await favRes.json();
+
+        if (!favorites || favorites.length === 0) {
+          log('No favorites to scan', 'warn');
+          return;
+        }
+
+        const res = await fetch('/api/condition/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apns: favorites })
+        });
+        const data = await res.json();
+
+        log(data.message, data.status === 'ok' ? 'info' : 'error');
+        refreshConditionStatus();
+
+      } catch (err) {
+        log('Error starting condition scan: ' + err.message, 'error');
+      }
+    }
+
+    // Initial condition status load + polling
+    refreshConditionStatus();
+    setInterval(refreshConditionStatus, 5000);
+
+    async function scanAllUnscannedCondition() {
+      if (!confirm('This will scan ALL properties without a condition score. This may take a long time and use significant API quota. Continue?')) {
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/condition/start-all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+
+        log(data.message, data.status === 'ok' ? 'info' : 'error');
+        refreshConditionStatus();
+
+      } catch (err) {
+        log('Error starting condition scan: ' + err.message, 'error');
+      }
+    }
+
+    // ============================================
+    // PGE Power Status Scanner Functions
+    // ============================================
+
+    async function refreshPgeStatus() {
+      try {
+        const res = await fetch('/api/pge/status');
+        const data = await res.json();
+
+        const statusBox = document.getElementById('pge-status-box');
+        const statusText = document.getElementById('pge-status-text');
+
+        if (data.scanner_available === false) {
+          statusBox.className = 'stat-box';
+          statusText.textContent = 'CLOUD MODE';
+          document.getElementById('btn-pge-stop').disabled = true;
+          document.getElementById('btn-pge-all').disabled = true;
+          document.getElementById('btn-pge-favorites').disabled = true;
+        } else if (data.is_running) {
+          statusBox.className = 'stat-box running';
+          statusText.textContent = 'SCANNING';
+          document.getElementById('btn-pge-stop').disabled = false;
+          document.getElementById('btn-pge-all').disabled = true;
+          document.getElementById('btn-pge-favorites').disabled = true;
+        } else {
+          statusBox.className = 'stat-box';
+          statusText.textContent = 'IDLE';
+          document.getElementById('btn-pge-stop').disabled = true;
+          document.getElementById('btn-pge-all').disabled = false;
+          document.getElementById('btn-pge-favorites').disabled = false;
+        }
+
+        document.getElementById('pge-current').textContent = data.current_address || '-';
+        document.getElementById('pge-checked').textContent = data.checked || 0;
+        document.getElementById('pge-unchecked').textContent = data.total_unchecked || 0;
+        document.getElementById('pge-power-on').textContent = data.total_power_on || 0;
+        document.getElementById('pge-power-off').textContent = data.total_power_off || 0;
+
+      } catch (err) {
+        console.error('Error fetching PGE status:', err);
+      }
+    }
+
+    async function startPgeScanAll() {
+      if (!confirm('This will check power status for ALL unchecked properties. This may take a long time. Continue?')) {
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/pge/start-all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+
+        log(data.message, data.status === 'ok' ? 'info' : 'error');
+        refreshPgeStatus();
+
+      } catch (err) {
+        log('Error starting PGE scan: ' + err.message, 'error');
+      }
+    }
+
+    async function startPgeScanFavorites() {
+      try {
+        const favRes = await fetch('/api/favorites');
+        const favorites = await favRes.json();
+
+        if (!favorites || favorites.length === 0) {
+          log('No favorites to scan', 'warn');
+          return;
+        }
+
+        const res = await fetch('/api/pge/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apns: favorites })
+        });
+        const data = await res.json();
+
+        log(data.message, data.status === 'ok' ? 'info' : 'error');
+        refreshPgeStatus();
+
+      } catch (err) {
+        log('Error starting PGE scan: ' + err.message, 'error');
+      }
+    }
+
+    async function stopPgeScan() {
+      try {
+        const res = await fetch('/api/pge/stop', {
+          method: 'POST'
+        });
+        const data = await res.json();
+
+        log(data.message, data.status === 'ok' ? 'info' : 'warn');
+        refreshPgeStatus();
+
+      } catch (err) {
+        log('Error stopping PGE scan: ' + err.message, 'error');
+      }
+    }
+
+    // Initial PGE status load + polling
+    refreshPgeStatus();
+    setInterval(refreshPgeStatus, 5000);
+  </script>
+</body>
+
+</html>

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Home – BARN{% endblock %}
+
+{% block content %}
+<h1 style="font-size:22px; font-weight:700; margin-bottom:24px;">Dashboard</h1>
+
+<div class="stat-grid" id="summary-stats">
+  <div class="stat-box"><div class="value" id="stat-reports">–</div><div class="label">Property Reports</div></div>
+  <div class="stat-box"><div class="value" id="stat-volunteers">–</div><div class="label">Volunteers</div></div>
+  <div class="stat-box"><div class="value" id="stat-caretakers">–</div><div class="label">Caretaker Apps</div></div>
+  <div class="stat-box"><div class="value" id="stat-owners">–</div><div class="label">Owner Registrations</div></div>
+  <div class="stat-box"><div class="value" id="stat-vpt">–</div><div class="label">VPT Properties</div></div>
+</div>
+
+<div class="card">
+  <h2>Recent Property Reports</h2>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th>Date</th><th>Address</th><th>Reporter</th><th>Status</th></tr></thead>
+      <tbody id="tbl-reports"><tr><td colspan="4" style="color:var(--text-muted)">Loading…</td></tr></tbody>
+    </table>
+  </div>
+  <div style="margin-top:10px;"><a class="btn" href="/outreach#reports">View All →</a></div>
+</div>
+
+<div class="card">
+  <h2>Recent Volunteer Applications</h2>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th>Date</th><th>Name</th><th>Email</th><th>Status</th></tr></thead>
+      <tbody id="tbl-volunteers"><tr><td colspan="4" style="color:var(--text-muted)">Loading…</td></tr></tbody>
+    </table>
+  </div>
+  <div style="margin-top:10px;"><a class="btn" href="/outreach#volunteers">View All →</a></div>
+</div>
+
+<div class="card">
+  <h2>Recent Caretaker Applications</h2>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th>Date</th><th>Name</th><th>Email</th><th>Status</th></tr></thead>
+      <tbody id="tbl-caretakers"><tr><td colspan="4" style="color:var(--text-muted)">Loading…</td></tr></tbody>
+    </table>
+  </div>
+  <div style="margin-top:10px;"><a class="btn" href="/outreach#caretakers">View All →</a></div>
+</div>
+
+<div class="card">
+  <h2>Recent Owner Registrations</h2>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th>Date</th><th>Name</th><th>Address</th><th>Status</th></tr></thead>
+      <tbody id="tbl-owners"><tr><td colspan="4" style="color:var(--text-muted)">Loading…</td></tr></tbody>
+    </table>
+  </div>
+  <div style="margin-top:10px;"><a class="btn" href="/outreach#owners">View All →</a></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function fmt(iso) {
+  if (!iso) return '–';
+  return new Date(iso).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+}
+function pill(status) {
+  return `<span class="pill pill-${status || 'pending'}">${status || 'pending'}</span>`;
+}
+async function load() {
+  try {
+    const [r, v, c, o, s] = await Promise.all([
+      fetch('/api/submissions/reports?limit=5').then(x => x.json()),
+      fetch('/api/submissions/volunteers?limit=5').then(x => x.json()),
+      fetch('/api/submissions/caretakers?limit=5').then(x => x.json()),
+      fetch('/api/submissions/owners?limit=5').then(x => x.json()),
+      fetch('/api/scan/status').then(x => x.json()),
+    ]);
+    document.getElementById('stat-reports').textContent = r.total ?? '–';
+    document.getElementById('stat-volunteers').textContent = v.total ?? '–';
+    document.getElementById('stat-caretakers').textContent = c.total ?? '–';
+    document.getElementById('stat-owners').textContent = o.total ?? '–';
+    const vptVal = s.vpt_count;
+    document.getElementById('stat-vpt').textContent = vptVal != null ? vptVal.toLocaleString() : '–';
+
+    document.getElementById('tbl-reports').innerHTML = (r.items || []).map(x =>
+      `<tr><td>${fmt(x.created_at)}</td><td>${x.property_address || '–'}</td><td>${x.reporter_name || '–'}</td><td>${pill(x.status)}</td></tr>`
+    ).join('') || '<tr><td colspan="4" style="color:var(--text-muted)">None yet</td></tr>';
+
+    document.getElementById('tbl-volunteers').innerHTML = (v.items || []).map(x =>
+      `<tr><td>${fmt(x.created_at)}</td><td>${x.name || '–'}</td><td>${x.email || '–'}</td><td>${pill(x.status)}</td></tr>`
+    ).join('') || '<tr><td colspan="4" style="color:var(--text-muted)">None yet</td></tr>';
+
+    document.getElementById('tbl-caretakers').innerHTML = (c.items || []).map(x =>
+      `<tr><td>${fmt(x.created_at)}</td><td>${x.applicant_name || '–'}</td><td>${x.applicant_email || '–'}</td><td>${pill(x.status)}</td></tr>`
+    ).join('') || '<tr><td colspan="4" style="color:var(--text-muted)">None yet</td></tr>';
+
+    document.getElementById('tbl-owners').innerHTML = (o.items || []).map(x =>
+      `<tr><td>${fmt(x.created_at)}</td><td>${x.owner_name || '–'}</td><td>${x.property_address || '–'}</td><td>${pill(x.status)}</td></tr>`
+    ).join('') || '<tr><td colspan="4" style="color:var(--text-muted)">None yet</td></tr>';
+  } catch(e) { console.error(e); }
+}
+load();
+</script>
+{% endblock %}

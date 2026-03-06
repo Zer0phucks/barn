@@ -1,0 +1,52 @@
+
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+.eggs/
+*.egg-info/
+*.egg
+
+# Node (for Playwright)
+node_modules/
+package-lock.json
+
+# Data files (large, regeneratable, or contain PII)
+*.csv
+*.csv.bak
+*.sqlite
+*.db
+*.jsonl
+mailing_addresses.txt
+export_batches/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vercel
+.vercel/
+
+# Logs
+*.log
+/tmp/
+
+# Playwright
+playwright-report/
+test-results/
+.vercel
+.env*.local

@@ -1,0 +1,92 @@
+import sys
+import time
+import os
+import webbrowser
+
+try:
+    import pyautogui
+    # Check if opencv is available for confidence matching(optional but recommended)
+    import cv2
+except ImportError as e:
+    print("Error: Missing required libraries.")
+    if "pyautogui" in str(e):
+        print("Please install pyautogui: pip install pyautogui")
+        # System dependencies for Linux might be needed too (getting started guide suggests scrot)
+        print("On Linux, you may also need: sudo apt-get install python3-tk python3-dev scrot")
+    if "cv2" in str(e):
+        print("Please install opencv-python for image matching: pip install opencv-python")
+    sys.exit(1)
+
+# Configuration
+LINKS_FILE = 'links.txt'
+IMAGE_FILE = 'save.png'
+PAUSE_BETWEEN_LINKS = 5  # Seconds to wait after closing tab before next one
+PAGE_LOAD_WAIT = 5       # Seconds to wait for page to load
+SCREENSHOT_WAIT = 5      # Seconds to wait after clicking save before closing
+CONFIDENCE = 0.8         # Match confidence (requires opencv-python)
+
+def main():
+    # Check if files exist
+    if not os.path.exists(LINKS_FILE):
+        print(f"Error: {LINKS_FILE} not found! Please create it with URLs.")
+        return
+    if not os.path.exists(IMAGE_FILE):
+        print(f"Error: {IMAGE_FILE} not found! Please place the reference image in the same directory.")
+        return
+
+    print("Starting screenshot script in 5 seconds...")
+    print("Please ensure your browser is open and the extension icon is visible if needed.")
+    print("Move your mouse to the corner of the screen to abort (PyAutoGUI fail-safe enabled).")
+    time.sleep(5)
+
+    try:
+        with open(LINKS_FILE, 'r') as f:
+            links = [line.strip() for line in f if line.strip()]
+    except Exception as e:
+        print(f"Error reading links file: {e}")
+        return
+
+    print(f"Found {len(links)} links. Processing...")
+
+    for i, link in enumerate(links):
+        print(f"[{i+1}/{len(links)}] Opening: {link}")
+        
+        # Open URL in new tab
+        try:
+            webbrowser.open_new_tab(link)
+        except Exception as e:
+             print(f"  Error opening browser: {e}")
+             continue
+        
+        # Wait for page load
+        time.sleep(PAGE_LOAD_WAIT)
+        
+        # Look for the image
+        try:
+            # Note: confidence requires opencv-python installed
+            location = pyautogui.locateCenterOnScreen(IMAGE_FILE, confidence=CONFIDENCE)
+            
+            if location:
+                print(f"  Found {IMAGE_FILE} at {location}. Clicking...")
+                pyautogui.click(location)
+                time.sleep(SCREENSHOT_WAIT)  # Wait for save/action
+            else:
+                print(f"  Could not find {IMAGE_FILE} on screen.")
+                
+        except pyautogui.ImageNotFoundException:
+             print(f"  Could not find {IMAGE_FILE} on screen.")
+        except Exception as e:
+            print(f"  Error searching/clicking: {e}")
+
+        # Close the tab (Ctrl+W is standard for most browsers)
+        # Using hotkey to simulate keyboard shortcut
+        print("  Closing tab...")
+        pyautogui.hotkey('ctrl', 'w')
+        
+        # Wait before next link to let browser settle
+        time.sleep(PAUSE_BETWEEN_LINKS)
+
+    print("Done!")
+
+if __name__ == "__main__":
+    main()

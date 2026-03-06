@@ -1,0 +1,920 @@
+[
+  {
+    "apn": "23-442-1-2",
+    "address": "845 ALMA PL OAKLAND 94610",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "11-891-23",
+    "address": "876 ROSEMOUNT RD OAKLAND 94610",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "29A-1312-1-6",
+    "address": "4490 ARCADIA AVE OAKLAND 94602",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "29-1077-3",
+    "address": "2820 LONDON RD OAKLAND 94602",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "29-1077-8-1",
+    "address": "2819 LONDON RD OAKLAND 94602",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "14-1214-21",
+    "address": "674 53RD ST OAKLAND 94609",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "28-909-7",
+    "address": "3461 WILSON AVE OAKLAND 94602",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "29-990-42",
+    "address": "3506 LAGUNA AVE OAKLAND 94602",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "28-918-17",
+    "address": "3465 MAPLE AVE OAKLAND 94602",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48B-7153-26",
+    "address": "4821 HARBORD DR OAKLAND 94618",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48A-7049-13",
+    "address": "5930 TAFT AVE OAKLAND 94618",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48A-7120-16",
+    "address": "120 BEECHWOOD DR OAKLAND 94618",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "11-893-9",
+    "address": "1132 LONGRIDGE RD OAKLAND 94610",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "29-1270-1-46",
+    "address": "1 WOODCREST CIR OAKLAND 94602",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "29A-1357-24",
+    "address": "2591 LEIMERT BLVD OAKLAND 94602",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "29-1069-35-2",
+    "address": "4000 RETTIG AVE OAKLAND 94602",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48-6298-49",
+    "address": "4978 SCOTIA AVE OAKLAND 94605",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "10-826-23",
+    "address": "404 SANTA CLARA AVE OAKLAND 94610",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "24-531-30",
+    "address": "3868 GREENWOOD AVE OAKLAND 94602",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "15-1378-7",
+    "address": "554 63RD ST OAKLAND 94609",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48E-7320-5",
+    "address": "2001 MANZANITA DR OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48E-7316-11",
+    "address": "2000 MANZANITA DR OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48E-7325-92",
+    "address": "2331 ARROWHEAD DR OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48D-7310-4",
+    "address": "6615 EVERGREEN AVE OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48D-7296-8",
+    "address": "7053 SHIRLEY DR OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "10-831-11",
+    "address": "615 CHETWOOD ST OAKLAND 94610",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "11-883-49",
+    "address": "644 LONGRIDGE RD OAKLAND 94610",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "23-405-17",
+    "address": "869 CLEVELAND ST OAKLAND 94606",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48F-7379-30",
+    "address": "1844 WOODHAVEN WAY OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48G-7418-10",
+    "address": "5653 FLORENCE TER OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48G-7404-25",
+    "address": "144 DUNCAN WAY OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48G-7404-13-2",
+    "address": "154 DUNCAN WAY OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48C-7190-42",
+    "address": "6136 JOHNSTON DR OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48C-7186-2-3",
+    "address": "6074 JOHNSTON DR OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48G-7432-21",
+    "address": "6901 BALSAM WAY OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48D-7296-19",
+    "address": "7023 SHIRLEY DR OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "23-390-4",
+    "address": "1085 BELLA VISTA AVE OAKLAND 94610",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "51-4745-48",
+    "address": "238 LA SALLE AVE OAKLAND 94610",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "23-431-34",
+    "address": "586 KENWYN RD OAKLAND 94610",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "23-464-3",
+    "address": "863 MCKINLEY AVE OAKLAND 94610",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "32-2049-12-2",
+    "address": "2827 ABBEY ST OAKLAND 94619",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "32-2031-132",
+    "address": "3022 38TH AVE OAKLAND 94619",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "36-2502-157",
+    "address": "3287 MORCOM AVE OAKLAND 94619",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "36-2502-32",
+    "address": "3439 PIERSON ST OAKLAND 94619",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "32-2030-141",
+    "address": "3530 SUTER ST OAKLAND 94619",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "14-1239-19",
+    "address": "5278 MANILA AVE OAKLAND 94618",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "12-963-17",
+    "address": "716 APGAR ST OAKLAND 94609",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "60-2493-26-1",
+    "address": "1396 SUMMIT RD BERKELEY 94708",
+    "city": "BERKELEY",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "37A-2785-23",
+    "address": "6010 BUENA VENTURA AVE OAKLAND 94605",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "85-107-25",
+    "address": "5201 SADDLE BROOK DR OAKLAND 94619",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48-6430-65",
+    "address": "233 INVERNESS CT OAKLAND 94605",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "37-2605-31-15",
+    "address": "5401 LEONA ST OAKLAND 94619",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "37-2605-8-3",
+    "address": "5701 LEONA ST OAKLAND 94605",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48D-7303-98",
+    "address": "6585 GIRVIN DR OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48E-7347-41",
+    "address": "6830 PASO ROBLES DR OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48E-7334-81",
+    "address": "6748 SNAKE RD OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48F-7377-51",
+    "address": "6666 OAKWOOD DR OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48F-7381-31-2",
+    "address": "6415 ASPINWALL RD OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48F-7390-4-5",
+    "address": "1731 GOULDIN RD OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48G-7422-42",
+    "address": "5838 NOTTINGHAM DR OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48G-7440-19",
+    "address": "6217 THORNHILL DR OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48G-7435-30",
+    "address": "7135 PINEHAVEN RD OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48G-7431-27",
+    "address": "6996 PINEHAVEN RD OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48F-7367-19",
+    "address": "1999 GASPAR DR OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48B-7139-32-5",
+    "address": " SHERIDAN RD OAKLAND 94618",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48B-7139-7",
+    "address": "44 SHERIDAN RD OAKLAND 94618",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48B-7159-28",
+    "address": "5326 HARBORD DR OAKLAND 94618",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48B-7132-13",
+    "address": "222 MANDALAY RD OAKLAND 94618",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48B-7127-12",
+    "address": "275 MANDALAY RD OAKLAND 94618",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48A-7108-6-4",
+    "address": "5988 MARGARIDO DR OAKLAND 94618",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48G-7432-7",
+    "address": "6333 SKYLINE BLVD OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48G-7432-28-2",
+    "address": "6151 SKYLINE BLVD OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "14-1235-6",
+    "address": "5267 BOYD AVE OAKLAND 94618",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48G-7404-12",
+    "address": "1201 MOUNTAIN BLVD OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48E-7342-35",
+    "address": "2050 ASILOMAR DR OAKLAND 94611",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "37A-3138-4-6",
+    "address": "5200 OLD REDWOOD RD OAKLAND 94619",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "37A-3143-12",
+    "address": "5645 BACON RD OAKLAND 94619",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "43A-4761-9",
+    "address": "8227 SKYLINE CIR OAKLAND 94605",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48-6313-70",
+    "address": "4847 DUNKIRK AVE OAKLAND 94605",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1080-39",
+    "address": "348 BEACH RD ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1078-10",
+    "address": "306 MAITLAND DR ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "941-165-36",
+    "address": "8559 DEERVALE RD DUBLIN 94568",
+    "city": "DUBLIN",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "941-183-3",
+    "address": "8780 WICKLOW LN DUBLIN 94568",
+    "city": "DUBLIN",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "941-2753-35",
+    "address": "8363 CYPRESS CT DUBLIN 94568",
+    "city": "DUBLIN",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "941-2770-17",
+    "address": "8087 JADE CIR DUBLIN 94568",
+    "city": "DUBLIN",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "941-196-51",
+    "address": "7112 TAMARACK DR DUBLIN 94568",
+    "city": "DUBLIN",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "29-1158-5-7",
+    "address": "3551 JOAQUIN MILLER RD OAKLAND 94602",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "37A-3150-44",
+    "address": "23 RISHELL DR OAKLAND 94619",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "37A-3148-32",
+    "address": "149 COLGETT DR OAKLAND 94619",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "29-1072-22",
+    "address": "3358 HERRIER ST OAKLAND 94602",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "30-1878-29",
+    "address": "3611 VIRDEN AVE OAKLAND 94619",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "29-1018-15",
+    "address": "4115 BARNER AVE OAKLAND 94602",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "28-975-9",
+    "address": "4023 LAUREL AVE OAKLAND 94602",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1075-20",
+    "address": "1073 HOLLY ST ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1074-22",
+    "address": "1008 BEGONIA DR ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1074-1",
+    "address": "1000 BEGONIA DR ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1035-13",
+    "address": "64 GARDEN RD ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1035-6-2",
+    "address": "28 GARDEN RD ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1035-90",
+    "address": "6 WINANT WAY ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1035-4",
+    "address": "22 GARDEN RD ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1036-38",
+    "address": "250 BEACH RD ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1036-14",
+    "address": "152 MAITLAND DR ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1329-5",
+    "address": "1933 KOFMAN PKWY ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1330-40",
+    "address": "5 WEXFORD PL ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1330-38",
+    "address": "4 THURLES PL ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1329-95",
+    "address": "1833 KOFMAN PKWY ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1347-113",
+    "address": "301 ANDERSON RD ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1350-7",
+    "address": "149 CREEDON CIR ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1346-40",
+    "address": "33 LAWRENCE RD ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1075-32",
+    "address": "1052 CAMELLIA DR ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1072-6",
+    "address": "1015 AZALEA DR ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1041-67",
+    "address": "912 MAGNOLIA DR ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1080-41",
+    "address": "352 BEACH RD ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1041-28",
+    "address": "907 LILAC ST ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1329-41",
+    "address": "710 LIMERICK LN ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "74-1327-137",
+    "address": "36 KARA RD ALAMEDA 94502",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "69-28-89",
+    "address": "1309 EASTSHORE DR ALAMEDA 94501",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "64-4252-52",
+    "address": "210 HILLCREST RD BERKELEY 94705",
+    "city": "BERKELEY",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "64-4252-21",
+    "address": "6007 CHABOLYN TER BERKELEY 94618",
+    "city": "BERKELEY",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "64-4250-12",
+    "address": "143 HILLCREST RD BERKELEY 94705",
+    "city": "BERKELEY",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "64-4250-10",
+    "address": "64 THE UPLANDS BERKELEY 94705",
+    "city": "BERKELEY",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "64-4232-24-2",
+    "address": "115 EL CAMINO REAL BERKELEY 94705",
+    "city": "BERKELEY",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "64-4232-9",
+    "address": "305 THE UPLANDS BERKELEY 94705",
+    "city": "BERKELEY",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "52-1565-85",
+    "address": "2832 ASHBY AVE BERKELEY 94705",
+    "city": "BERKELEY",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "48H-7601-43",
+    "address": "1395 GRAND VIEW DR OAKLAND 94603",
+    "city": "OAKLAND",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "60-2492-27",
+    "address": "1504 GRIZZLY PEAK BLVD BERKELEY 94708",
+    "city": "BERKELEY",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "60-2493-45",
+    "address": "1449 GRIZZLY PEAK BLVD BERKELEY 94708",
+    "city": "BERKELEY",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "63-2993-14",
+    "address": "2934 SHASTA RD BERKELEY 94708",
+    "city": "BERKELEY",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "63-2983-23",
+    "address": "2955 SHASTA RD BERKELEY 94708",
+    "city": "BERKELEY",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "63-2982-9-1",
+    "address": "1176 GRIZZLY PEAK BLVD BERKELEY 94708",
+    "city": "BERKELEY",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "63-2982-8",
+    "address": "1170 GRIZZLY PEAK BLVD BERKELEY 94708",
+    "city": "BERKELEY",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "63-2983-7",
+    "address": "1152 MILLER AVE BERKELEY 94708",
+    "city": "BERKELEY",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "63-3140-116",
+    "address": "1075 CRESTON RD BERKELEY 94708",
+    "city": "BERKELEY",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "63-3120-60",
+    "address": "945 CRESTON RD BERKELEY 94708",
+    "city": "BERKELEY",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "63-3120-52",
+    "address": "905 CRESTON RD BERKELEY 94708",
+    "city": "BERKELEY",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "69-130-271-1",
+    "address": "2807 MARINA DR ALAMEDA 94501",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "69-130-82",
+    "address": "2014 VERSAILLES AVE ALAMEDA 94501",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "69-130-299-1",
+    "address": "3017 MARINA DR ALAMEDA 94501",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "69-123-2",
+    "address": "3006 FERNSIDE BLVD ALAMEDA 94501",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "70-169-45",
+    "address": "2523 WEBB AVE ALAMEDA 94501",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "71-239-7",
+    "address": "2165 SAN JOSE AVE ALAMEDA 94501",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "72-384-100",
+    "address": "2 WASHOE CT ALAMEDA 94501",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "72-384-73",
+    "address": "1801 PARU ST ALAMEDA 94501",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "72-355-14",
+    "address": "1714 JAY ST ALAMEDA 94501",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "69-103-29",
+    "address": "3282 GARFIELD AVE ALAMEDA 94501",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "69-109-215-1",
+    "address": "3305 FERNSIDE BLVD ALAMEDA 94501",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "69-124-17",
+    "address": "3022 GIBBONS DR ALAMEDA 94501",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "69-130-4",
+    "address": "2830 FERNSIDE BLVD ALAMEDA 94501",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "70-161-4",
+    "address": "1825 VERSAILLES AVE ALAMEDA 94501",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "70-161-7",
+    "address": "1817 VERSAILLES AVE ALAMEDA 94501",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "70-161-29",
+    "address": "1718 PEARL ST ALAMEDA 94501",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "70-168-30",
+    "address": "2510 NOBLE AVE ALAMEDA 94501",
+    "city": "ALAMEDA",
+    "owner": "UNKNOWN"
+  },
+  {
+    "apn": "51-4781-10",
+    "address": "255 LA SALLE AVE PIEDMONT 94610",
+    "city": "PIEDMONT",
+    "owner": "UNKNOWN"
+  }
+]

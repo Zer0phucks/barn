@@ -1,0 +1,876 @@
+{% extends "base.html" %}
+{% block title %}Map View – BARN{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+<style>
+  .main-content { padding: 0 !important; }
+
+  #map {
+    height: calc(100vh - var(--topnav-h));
+    width: 100%;
+  }
+
+  .popup-content {
+    font-size: 13px;
+    line-height: 1.5;
+    max-width: 320px;
+  }
+
+  .popup-content h3 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    color: #2c3e50;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 6px;
+  }
+
+  .popup-content .field {
+    margin: 4px 0;
+  }
+
+  .popup-content .label {
+    font-weight: bold;
+    color: #555;
+  }
+
+  .popup-content .value {
+    color: #333;
+  }
+
+  .popup-content .actions {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #eee;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .popup-content .actions a {
+    color: #0a6a9a;
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .popup-content .actions a:hover {
+    text-decoration: underline;
+  }
+
+  .delinquent-yes {
+    color: #c0392b;
+    font-weight: bold;
+  }
+
+  .delinquent-no {
+    color: #27ae60;
+  }
+
+  .power-on {
+    color: #27ae60;
+    font-weight: bold;
+  }
+
+  .power-off {
+    color: #c0392b;
+    font-weight: bold;
+  }
+
+  .power-unknown {
+    color: #7f8c8d;
+  }
+
+  .loading {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    padding: 20px 40px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    z-index: 1000;
+    font-size: 16px;
+  }
+
+  .stats {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    background: white;
+    padding: 10px 16px;
+    border-radius: 6px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    z-index: 1000;
+    font-size: 13px;
+  }
+
+  .filters {
+    position: absolute;
+    top: 70px;
+    right: 20px;
+    background: white;
+    padding: 12px 16px;
+    border-radius: 6px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    z-index: 1000;
+    max-width: 860px;
+  }
+
+  .filters-content {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .filter-details summary {
+    cursor: pointer;
+    font-weight: bold;
+    user-select: none;
+    color: #2c3e50;
+    outline: none;
+  }
+
+  .filter-details[open] summary {
+    margin-bottom: 12px;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 8px;
+  }
+
+  .filter-details summary:hover {
+    color: #3498db;
+  }
+
+  .filters input,
+  .filters select {
+    padding: 6px 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+
+  .filters input {
+    width: 120px;
+  }
+
+  .filters select {
+    min-width: 100px;
+  }
+
+  .filters button {
+    padding: 6px 14px;
+    background: #2c3e50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+
+  .filters button:hover {
+    background: #34495e;
+  }
+
+  .filters button.locate-btn {
+    background: #16a085;
+  }
+
+  .filters button.locate-btn:hover {
+    background: #138a72;
+  }
+
+  .filters button.locate-btn:disabled {
+    opacity: 0.65;
+    cursor: wait;
+  }
+
+  .filters label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .filters input[type="checkbox"] {
+    width: auto;
+  }
+
+  .fav-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 18px;
+    padding: 2px 6px;
+    line-height: 1;
+    transition: transform 0.1s;
+    border-radius: 4px;
+  }
+
+  .fav-btn:hover {
+    transform: scale(1.2);
+    background: #f0f0f0;
+  }
+
+  .fav-btn.favorited {
+    color: #e74c3c;
+  }
+
+  .fav-btn:not(.favorited) {
+    color: #ccc;
+  }
+
+  .popup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 6px;
+  }
+
+  .popup-header h3 {
+    margin: 0;
+    font-size: 14px;
+    color: #2c3e50;
+    flex: 1;
+  }
+
+  .popup-streetview {
+    width: 100%;
+    max-height: 150px;
+    object-fit: cover;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    border: 1px solid #ddd;
+  }
+
+  .condition-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: bold;
+    font-size: 11px;
+  }
+
+  .condition-good {
+    background: #d5f5e3;
+    color: #27ae60;
+  }
+
+  .condition-fair {
+    background: #fef9e7;
+    color: #f39c12;
+  }
+
+  .condition-poor {
+    background: #fadbd8;
+    color: #c0392b;
+  }
+
+  .condition-none {
+    background: #d6eaf8;
+    color: #3498db;
+  }
+
+  .location-info {
+    position: absolute;
+    bottom: 72px;
+    left: 20px;
+    background: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    z-index: 1000;
+    font-size: 12px;
+    max-width: min(92vw, 520px);
+    line-height: 1.4;
+  }
+
+  .location-info.error {
+    color: #c0392b;
+  }
+</style>
+{% endblock %}
+
+{% block sidenav %}
+<nav class="sidenav">
+  <div class="sidenav-label">Search</div>
+  <a href="/search">List View</a>
+  <a href="/map" class="active">Map View</a>
+  <a href="/lists">My Lists</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div id="map"></div>
+<details class="filters filter-details" open>
+  <summary>Filters</summary>
+  <div class="filters-content">
+    <input type="text" id="filter-q" placeholder="Search..." />
+    <details class="dropdown" style="position: relative; display: inline-block;">
+      <summary
+        style="padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: white; user-select: none; font-size: 13px;">
+        Select Zips
+      </summary>
+      <div class="dropdown-content"
+        style="position: absolute; background: white; border: 1px solid #ccc; max-height: 200px; overflow-y: auto; padding: 10px; z-index: 1001; margin-top: 4px; border-radius: 4px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 4px; min-width: 120px;">
+        {% for zip in available_zips %}
+        <label
+          style="display: flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; font-weight: normal; font-size: 13px;">
+          <input type="checkbox" name="zip" value="{{ zip }}" class="filter-zip-cb"> {{ zip }}
+        </label>
+        {% endfor %}
+      </div>
+    </details>
+    <input type="text" id="filter-city" placeholder="City (e.g. OAKLAND)" />
+    <input type="text" id="filter-owner-name" placeholder="Owner Name" />
+    <select id="filter-power">
+      <option value="">All Power</option>
+      <option value="on">Power ON</option>
+      <option value="off">Power OFF</option>
+      <option value="unknown">Unknown</option>
+    </select>
+    <label>
+      <input type="checkbox" id="filter-vpt" />
+      VPT Only
+    </label>
+    <label>
+      <input type="checkbox" id="filter-delinquent" />
+      Delinquent Only
+    </label>
+    <label>
+      <input type="checkbox" id="filter-fav" />
+      Favorites
+    </label>
+    <button class="locate-btn" id="locate-btn" onclick="locateUser()">My Location</button>
+    <button onclick="applyFilters()">Apply</button>
+  </div>
+</details>
+<div class="loading" id="loading">Loading properties...</div>
+<div class="location-info" id="location-info" style="display: none;"></div>
+<div class="stats" id="stats" style="display: none;"></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+<script>
+  // Initialize map centered on Oakland
+  const map = L.map('map').setView([37.8044, -122.2712], 12);
+  const pageParams = new URLSearchParams(window.location.search);
+  const activeListId = (pageParams.get('list_id') || '').trim();
+
+  // Add OpenStreetMap tiles
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 19
+  }).addTo(map);
+
+  function createMarkerClusterGroup() {
+    return L.markerClusterGroup({
+      maxClusterRadius: 50,
+      spiderfyOnMaxZoom: true,
+      showCoverageOnHover: false,
+      zoomToBoundsOnClick: true,
+      chunkedLoading: true,
+      chunkInterval: 40,
+      chunkDelay: 20
+    });
+  }
+
+  // Create marker cluster group
+  let markers = createMarkerClusterGroup();
+
+  // Create marker icon based on condition score (primary) or power status (fallback)
+  function getMarkerIcon(conditionScore, powerStatus) {
+    let color = '#3498db'; // blue for unscanned
+
+    if (conditionScore !== null && conditionScore !== undefined) {
+      // Use condition score coloring
+      if (conditionScore <= 3.0) {
+        color = '#27ae60'; // green for good condition
+      } else if (conditionScore <= 6.0) {
+        color = '#f39c12'; // yellow/orange for fair
+      } else {
+        color = '#c0392b'; // red for poor condition
+      }
+    }
+
+    return L.divIcon({
+      className: 'custom-marker',
+      html: `<div style="background:${color};width:16px;height:16px;border-radius:50%;border:3px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.4);"></div>`,
+      iconSize: [22, 22],
+      iconAnchor: [11, 11],
+      popupAnchor: [0, -11]
+    });
+  }
+
+  // Track favorite states
+  const favoriteStates = {};
+  const favoriteRequests = new Set();
+
+  function normalizeApn(value) {
+    return String(value ?? '').trim();
+  }
+
+  function escapeHtmlAttr(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;');
+  }
+
+  function setFavoriteButtonState(btn, isFavorited) {
+    if (!btn) return;
+    if (isFavorited) {
+      btn.classList.add('favorited');
+      btn.title = 'Remove from favorites';
+    } else {
+      btn.classList.remove('favorited');
+      btn.title = 'Add to favorites';
+    }
+  }
+
+  function syncFavoriteButtons(apn, isFavorited) {
+    const normalizedApn = normalizeApn(apn);
+    if (!normalizedApn) return;
+    favoriteStates[normalizedApn] = Boolean(isFavorited);
+    document.querySelectorAll('.fav-btn').forEach((btn) => {
+      if (normalizeApn(btn.dataset.apn) === normalizedApn) {
+        setFavoriteButtonState(btn, favoriteStates[normalizedApn]);
+      }
+    });
+  }
+
+  function setFavoriteButtonsBusy(apn, isBusy) {
+    const normalizedApn = normalizeApn(apn);
+    if (!normalizedApn) return;
+    document.querySelectorAll('.fav-btn').forEach((btn) => {
+      if (normalizeApn(btn.dataset.apn) !== normalizedApn) return;
+      btn.disabled = Boolean(isBusy);
+      if (isBusy) {
+        btn.setAttribute('aria-busy', 'true');
+      } else {
+        btn.removeAttribute('aria-busy');
+      }
+    });
+  }
+
+  // Toggle favorite via API
+  async function toggleFavorite(apn) {
+    const normalizedApn = normalizeApn(apn);
+    if (!normalizedApn || favoriteRequests.has(normalizedApn)) {
+      return;
+    }
+    favoriteRequests.add(normalizedApn);
+    setFavoriteButtonsBusy(normalizedApn, true);
+    try {
+      const res = await fetch(`/api/favorites/${encodeURIComponent(normalizedApn)}/toggle`, { method: 'POST' });
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (_parseError) {
+        data = null;
+      }
+
+      if (!res.ok || !data || data.status !== 'ok' || typeof data.favorited !== 'boolean') {
+        throw new Error((data && (data.error || data.message)) || `Failed to update favorite (${res.status})`);
+      }
+
+      syncFavoriteButtons(normalizedApn, data.favorited);
+    } catch (err) {
+      console.error('Error toggling favorite:', err);
+      alert(`Error updating favorite for ${normalizedApn}: ${err.message || err}`);
+    } finally {
+      favoriteRequests.delete(normalizedApn);
+      setFavoriteButtonsBusy(normalizedApn, false);
+    }
+  }
+
+  const MAP_PAGE_SIZE = 200;
+  const REQUEST_TIMEOUT_MS = 30000;
+  const METERS_PER_MILE = 1609.344;
+  let activeLoadToken = 0;
+  let userLocationLatLng = null;
+  let userLocationAccuracyMeters = null;
+  let userLocationMarker = null;
+  let userLocationAccuracyCircle = null;
+  let locateInProgress = false;
+
+  function setLocateButtonState(label, disabled) {
+    const btn = document.getElementById('locate-btn');
+    if (!btn) return;
+    btn.textContent = label;
+    btn.disabled = Boolean(disabled);
+  }
+
+  function renderLocationInfo(message, isError = false) {
+    const infoEl = document.getElementById('location-info');
+    if (!infoEl) return;
+    infoEl.textContent = message;
+    infoEl.classList.toggle('error', Boolean(isError));
+    infoEl.style.display = message ? 'block' : 'none';
+  }
+
+  function formatDistance(meters) {
+    if (!Number.isFinite(meters)) return '';
+    if (meters >= METERS_PER_MILE) {
+      return `${(meters / METERS_PER_MILE).toFixed(1)} mi`;
+    }
+    return `${Math.round(meters * 3.28084)} ft`;
+  }
+
+  function getNearestPropertyDistanceMeters(latLng) {
+    if (!latLng || !markers || !map.hasLayer(markers)) return null;
+    const layers = markers.getLayers();
+    if (!Array.isArray(layers) || layers.length === 0) return null;
+    let nearest = null;
+    for (const layer of layers) {
+      if (!layer || typeof layer.getLatLng !== 'function') continue;
+      const point = layer.getLatLng();
+      if (!point) continue;
+      const distance = map.distance(latLng, point);
+      if (!Number.isFinite(distance)) continue;
+      if (nearest === null || distance < nearest) {
+        nearest = distance;
+      }
+    }
+    return nearest;
+  }
+
+  function refreshLocationInfo() {
+    if (!userLocationLatLng) return;
+    const nearest = getNearestPropertyDistanceMeters(userLocationLatLng);
+    let text = `Your location: ${userLocationLatLng.lat.toFixed(5)}, ${userLocationLatLng.lng.toFixed(5)}`;
+    if (Number.isFinite(userLocationAccuracyMeters)) {
+      text += ` • accuracy ±${Math.round(userLocationAccuracyMeters)} m`;
+    }
+    if (nearest !== null) {
+      text += ` • nearest loaded property: ${formatDistance(nearest)}`;
+    }
+    renderLocationInfo(text);
+  }
+
+  function updateUserLocationLayers(lat, lng, accuracyMeters) {
+    const latLng = L.latLng(lat, lng);
+    userLocationLatLng = latLng;
+    userLocationAccuracyMeters = Number.isFinite(Number(accuracyMeters)) ? Number(accuracyMeters) : null;
+
+    if (!userLocationMarker) {
+      userLocationMarker = L.circleMarker(latLng, {
+        radius: 7,
+        color: '#0c63ce',
+        fillColor: '#3b82f6',
+        fillOpacity: 0.95,
+        weight: 2
+      }).addTo(map);
+      userLocationMarker.bindPopup('Your current location');
+    } else {
+      userLocationMarker.setLatLng(latLng);
+    }
+
+    if (userLocationAccuracyMeters && userLocationAccuracyMeters > 0) {
+      if (!userLocationAccuracyCircle) {
+        userLocationAccuracyCircle = L.circle(latLng, {
+          radius: userLocationAccuracyMeters,
+          color: '#3b82f6',
+          fillColor: '#3b82f6',
+          fillOpacity: 0.12,
+          weight: 1
+        }).addTo(map);
+      } else {
+        userLocationAccuracyCircle.setLatLng(latLng);
+        userLocationAccuracyCircle.setRadius(userLocationAccuracyMeters);
+      }
+    } else if (userLocationAccuracyCircle) {
+      map.removeLayer(userLocationAccuracyCircle);
+      userLocationAccuracyCircle = null;
+    }
+
+    refreshLocationInfo();
+    map.flyTo(latLng, Math.max(map.getZoom(), 14), { duration: 0.6 });
+  }
+
+  function geolocationErrorMessage(err) {
+    if (!err) return 'Unable to determine your location.';
+    if (err.code === 1) return 'Location permission denied.';
+    if (err.code === 2) return 'Location unavailable.';
+    if (err.code === 3) return 'Location request timed out.';
+    return err.message || 'Unable to determine your location.';
+  }
+
+  function locateUser() {
+    if (!navigator.geolocation) {
+      renderLocationInfo('Geolocation is not supported in this browser.', true);
+      return;
+    }
+    if (locateInProgress) {
+      return;
+    }
+    locateInProgress = true;
+    setLocateButtonState('Locating...', true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        locateInProgress = false;
+        setLocateButtonState('My Location', false);
+        updateUserLocationLayers(
+          position.coords.latitude,
+          position.coords.longitude,
+          position.coords.accuracy
+        );
+      },
+      (err) => {
+        locateInProgress = false;
+        setLocateButtonState('My Location', false);
+        renderLocationInfo(geolocationErrorMessage(err), true);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 30000
+      }
+    );
+  }
+
+  function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async function fetchJsonWithTimeout(url, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) {
+        throw new Error(`Request failed (${response.status})`);
+      }
+      return await response.json();
+    } catch (error) {
+      if (error && error.name === 'AbortError') {
+        throw new Error('Request timed out');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function createMarker(item) {
+    const icon = getMarkerIcon(item.condition_score, item.power_status);
+    const marker = L.marker([item.lat, item.lng], { icon: icon });
+    const apn = normalizeApn(item.apn);
+
+    // Track initial favorite state
+    if (apn) {
+      favoriteStates[apn] = Boolean(item.is_favorite);
+    }
+
+    const powerClass = item.power_status === 'ON' ? 'power-on' : (item.power_status === 'OFF' ? 'power-off' : 'power-unknown');
+    const isFavorite = apn ? Boolean(favoriteStates[apn]) : false;
+    const favClass = isFavorite ? 'favorited' : '';
+    const favTitle = apn ? (isFavorite ? 'Remove from favorites' : 'Add to favorites') : 'APN unavailable';
+    const favDisabled = apn ? '' : 'disabled aria-disabled="true"';
+    const vptClass = item.has_vpt === 'Yes' ? 'delinquent-yes' : '';
+
+    let conditionBadge = '<span class="condition-badge condition-none">Not Scanned</span>';
+    if (item.condition_score !== null && item.condition_score !== undefined) {
+      const score = item.condition_score;
+      let condClass = 'condition-good';
+      if (score > 6.0) condClass = 'condition-poor';
+      else if (score > 3.0) condClass = 'condition-fair';
+      conditionBadge = `<span class="condition-badge ${condClass}">${score.toFixed(1)}/10</span>`;
+    }
+
+    const streetviewImg = `<img class="popup-streetview" src="/api/streetview/${encodeURIComponent(apn)}" onerror="this.style.display='none'" alt="Satellite map">`;
+    const locationText = item.location || 'Unknown Location';
+    const locationHtml = item.property_search_url
+      ? `<a href="${item.property_search_url}" target="_blank" title="Search Owner" style="color: inherit; text-decoration: none; border-bottom: 1px dotted #333;">${locationText}</a>`
+      : locationText;
+
+    const mailingText = item.mailing_address || '';
+    const mailingHtml = (item.mailing_search_url && mailingText)
+      ? `<a href="${item.mailing_search_url}" target="_blank" title="Search Owner">${mailingText}</a>`
+      : mailingText;
+
+    const popupContent = `
+        <div class="popup-content">
+          <div class="popup-header">
+            <h3>${locationHtml}</h3>
+            <button class="fav-btn ${favClass}" data-apn="${escapeHtmlAttr(apn)}" title="${favTitle}" ${favDisabled}>♥</button>
+          </div>
+          ${streetviewImg}
+          <div class="field"><span class="label">City:</span> <span class="value">${item.city || ''}</span></div>
+          <div class="field"><span class="label">APN:</span> <span class="value">${item.apn}</span></div>
+          <div class="field"><span class="label">Condition:</span> ${conditionBadge}</div>
+          <div class="field"><span class="label">Owner Name:</span> <span class="value">${item.owner_name || '-'}</span></div>
+          <div class="field"><span class="label">VPT:</span> <span class="value ${vptClass}">${item.has_vpt}${item.vpt_marker ? ' (' + item.vpt_marker + ')' : ''}</span></div>
+          <div class="field"><span class="label">Delinquent:</span> <span class="value ${item.delinquent === 'Yes' ? 'delinquent-yes' : 'delinquent-no'}">${item.delinquent}</span></div>
+          <div class="field"><span class="label">Power:</span> <span class="value ${powerClass}">${item.power_status || 'Unknown'}</span></div>
+          <div class="field"><span class="label">Tax Year:</span> <span class="value">${item.tax_year}</span></div>
+          <div class="field"><span class="label">Last Payment:</span> <span class="value">${item.last_payment || 'None'}</span></div>
+          <div class="field"><span class="label">Mailing:</span> <span class="value">${mailingHtml}</span></div>
+          <div class="actions">
+            ${item.streetview_url ? `<a href="${item.streetview_url}" target="_blank">Street View</a>` : ''}
+            ${item.maps_url ? `<a href="${item.maps_url}" target="_blank">Google Maps</a>` : ''}
+            ${item.bill_url ? `<a href="${item.bill_url}" target="_blank">View Bill</a>` : ''}
+          </div>
+        </div>
+      `;
+
+    marker.bindPopup(popupContent, { maxWidth: 350 });
+
+    marker.on('popupopen', function () {
+      const popupEl = marker.getPopup() && marker.getPopup().getElement();
+      if (!popupEl) return;
+
+      const btn = popupEl.querySelector('.fav-btn');
+      if (!btn) return;
+
+      const buttonApn = normalizeApn(btn.dataset.apn) || apn;
+      if (!buttonApn) {
+        btn.disabled = true;
+        btn.title = 'APN unavailable';
+        return;
+      }
+
+      if (!(buttonApn in favoriteStates)) {
+        favoriteStates[buttonApn] = false;
+      }
+      setFavoriteButtonState(btn, favoriteStates[buttonApn]);
+      btn.disabled = favoriteRequests.has(buttonApn);
+      btn.onclick = function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleFavorite(buttonApn);
+      };
+    });
+
+    return marker;
+  }
+
+  // Load markers with filters
+  async function loadMarkers() {
+    const loadToken = ++activeLoadToken;
+    const q = document.getElementById('filter-q').value;
+    const zipCheckboxes = document.querySelectorAll('.filter-zip-cb:checked');
+    const zip = Array.from(zipCheckboxes).map(cb => cb.value).join(',');
+    const city = document.getElementById('filter-city').value;
+    const ownerName = document.getElementById('filter-owner-name').value;
+    const power = document.getElementById('filter-power').value;
+    const vpt = document.getElementById('filter-vpt').checked;
+    const delinquent = document.getElementById('filter-delinquent').checked;
+    const fav = document.getElementById('filter-fav').checked;
+
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (zip) params.set('zip', zip);
+    if (city) params.set('city', city);
+    if (ownerName) params.set('owner_name', ownerName);
+    if (power) params.set('power', power);
+    if (vpt) params.set('vpt', '1');
+    if (delinquent) params.set('delinquent', '1');
+    if (fav) params.set('fav', '1');
+    if (activeListId) params.set('list_id', activeListId);
+
+    const loadingEl = document.getElementById('loading');
+    const statsEl = document.getElementById('stats');
+    loadingEl.style.display = 'block';
+    loadingEl.textContent = 'Loading properties...';
+    statsEl.style.display = 'none';
+    statsEl.textContent = '';
+
+    // Clear existing markers
+    if (map.hasLayer(markers)) {
+      map.removeLayer(markers);
+    }
+    markers = createMarkerClusterGroup();
+
+    let page = 1;
+    let loaded = 0;
+    let total = null;
+
+    try {
+      while (true) {
+        if (loadToken !== activeLoadToken) {
+          return;
+        }
+
+        params.set('page', String(page));
+        params.set('page_size', String(MAP_PAGE_SIZE));
+        const payload = await fetchJsonWithTimeout('/api/markers?' + params.toString(), REQUEST_TIMEOUT_MS);
+        if (loadToken !== activeLoadToken) {
+          return;
+        }
+
+        const items = Array.isArray(payload) ? payload : (payload.items || []);
+        if (total === null) {
+          total = Number(Array.isArray(payload) ? items.length : (payload.total ?? items.length));
+        }
+
+        if (items.length === 0) {
+          break;
+        }
+
+        const markerBatch = items.map(createMarker);
+        if (markerBatch.length > 0) {
+          markers.addLayers(markerBatch);
+          loaded += markerBatch.length;
+          if (total && total > 0) {
+            loadingEl.textContent = `Loading properties... ${loaded}/${total}`;
+          } else {
+            loadingEl.textContent = `Loading properties... ${loaded}`;
+          }
+        }
+
+        const hasMore = !Array.isArray(payload) && Boolean(payload.has_more);
+        if (!hasMore) {
+          break;
+        }
+        page += 1;
+        await delay(0);
+      }
+
+      if (loadToken !== activeLoadToken) {
+        return;
+      }
+
+      map.addLayer(markers);
+      loadingEl.style.display = 'none';
+
+      statsEl.innerHTML = `<strong>${loaded}</strong> properties on map`;
+      statsEl.style.display = 'block';
+      refreshLocationInfo();
+
+      if (loaded > 0) {
+        const bounds = markers.getBounds();
+        if (bounds && bounds.isValid()) {
+          map.fitBounds(bounds, { padding: [20, 20] });
+        }
+      }
+    } catch (error) {
+      if (loadToken !== activeLoadToken) {
+        return;
+      }
+      console.error('Error loading markers:', error);
+      loadingEl.style.display = 'block';
+      loadingEl.textContent = `Error loading data: ${error.message || error}`;
+    }
+  }
+
+  function applyFilters() {
+    loadMarkers();
+  }
+
+  // Handle Enter key in filter inputs
+  document.getElementById('filter-q').addEventListener('keypress', e => { if (e.key === 'Enter') applyFilters(); });
+  document.getElementById('filter-city').addEventListener('keypress', e => { if (e.key === 'Enter') applyFilters(); });
+  document.getElementById('filter-owner-name').addEventListener('keypress', e => { if (e.key === 'Enter') applyFilters(); });
+
+  // Initial load
+  loadMarkers();
+</script>
+{% endblock %}

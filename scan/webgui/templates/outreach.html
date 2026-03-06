@@ -1,0 +1,1107 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VPT Scanner - Outreach Pipeline</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --bg: #0f0f1a;
+      --surface: #1a1a2e;
+      --surface-2: #222240;
+      --border: #2a2a4a;
+      --text: #e0e0f0;
+      --text-muted: #8888aa;
+      --primary: #3498db;
+      --primary-hover: #2980b9;
+      --success: #27ae60;
+      --warning: #f39c12;
+      --danger: #e74c3c;
+      --purple: #9b59b6;
+      --radius: 8px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* Header */
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header h1 { font-size: 20px; font-weight: 600; }
+    .header-links { display: flex; gap: 16px; align-items: center; }
+    .header-links a {
+      color: var(--primary);
+      text-decoration: none;
+      font-size: 14px;
+    }
+    .header-links a:hover { text-decoration: underline; }
+    .header-links a.active { color: var(--text); font-weight: 600; }
+    .gear-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: var(--radius);
+    }
+    .gear-btn:hover { background: var(--surface-2); color: var(--text); }
+
+    /* Container */
+    .container { max-width: 1400px; margin: 0 auto; padding: 20px 24px; }
+
+    /* Cards */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .card h2 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* Pipeline funnel */
+    .funnel { display: flex; flex-direction: column; gap: 6px; }
+    .funnel-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+    }
+    .funnel-label {
+      width: 120px;
+      text-align: right;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+    .funnel-bar-wrap {
+      flex: 1;
+      background: var(--surface-2);
+      border-radius: 4px;
+      height: 24px;
+      overflow: hidden;
+      cursor: pointer;
+    }
+    .funnel-bar {
+      height: 100%;
+      border-radius: 4px;
+      min-width: 2px;
+      transition: width 0.4s ease;
+      display: flex;
+      align-items: center;
+      padding-left: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+      white-space: nowrap;
+    }
+    .funnel-count { width: 50px; text-align: right; font-weight: 600; flex-shrink: 0; }
+
+    .stage-identified    { background: #6c757d; }
+    .stage-qualified     { background: #3498db; }
+    .stage-outreach_ready { background: #27ae60; }
+    .stage-contacted     { background: #e67e22; }
+    .stage-responding    { background: #f1c40f; color: #333; }
+    .stage-negotiating   { background: #9b59b6; }
+    .stage-partnered     { background: #1a8a4a; }
+    .stage-declined      { background: #c0392b; }
+    .stage-no_response   { background: #495057; }
+
+    /* Action bar */
+    .action-bar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .btn {
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text);
+      border-radius: var(--radius);
+      padding: 8px 16px;
+      font-size: 13px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s;
+    }
+    .btn:hover { background: var(--border); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-success { background: var(--success); border-color: var(--success); color: #fff; }
+    .btn-success:hover { background: #219a52; }
+    .btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+    .btn-danger:hover { background: #c0392b; }
+
+    .status-pill {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 12px;
+      background: var(--surface-2);
+      color: var(--text-muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .status-pill.active { background: rgba(39,174,96,0.15); color: var(--success); }
+    .dot-pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--success); animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    /* Filters row */
+    .filters {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .filters select, .filters input {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 10px;
+      border-radius: var(--radius);
+      font-size: 13px;
+    }
+    .filters select:focus, .filters input:focus { outline: none; border-color: var(--primary); }
+
+    /* Table */
+    .table-wrap { overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+    th {
+      background: var(--surface-2);
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.5px;
+      position: sticky;
+      top: 0;
+      cursor: pointer;
+      user-select: none;
+    }
+    th:hover { color: var(--text); }
+    tr:hover td { background: rgba(52,152,219,0.05); }
+    td a { color: var(--primary); text-decoration: none; }
+    td a:hover { text-decoration: underline; }
+
+    .cb { width: 16px; height: 16px; cursor: pointer; accent-color: var(--primary); }
+
+    /* Score badge */
+    .score-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 12px;
+    }
+    .score-high { background: rgba(39,174,96,0.2); color: #2ecc71; }
+    .score-mid  { background: rgba(243,156,18,0.2); color: #f39c12; }
+    .score-low  { background: rgba(231,76,60,0.2); color: #e74c3c; }
+    .score-none { background: var(--surface-2); color: var(--text-muted); }
+
+    /* Stage dropdown */
+    .stage-select {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 4px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .stage-select:focus { outline: none; border-color: var(--primary); }
+
+    .vpt-yes { color: var(--danger); font-weight: 600; }
+    .vpt-no  { color: var(--text-muted); }
+
+    .row-actions { display: flex; gap: 4px; }
+    .row-actions .btn { padding: 4px 8px; font-size: 11px; }
+
+    /* Pagination */
+    .pager {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .pager-btns { display: flex; gap: 4px; }
+    .pager-btns .btn { padding: 6px 12px; }
+    .pager-btns .btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      width: 90%;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 24px;
+    }
+    .modal-sm { max-width: 500px; }
+    .modal-lg { max-width: 800px; }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .modal-header h3 { font-size: 18px; }
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 24px;
+      cursor: pointer;
+    }
+    .modal-close:hover { color: var(--text); }
+
+    .form-group { margin-bottom: 16px; }
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .form-group input, .form-group textarea, .form-group select {
+      width: 100%;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-family: inherit;
+    }
+    .form-group input:focus, .form-group textarea:focus { outline: none; border-color: var(--primary); }
+    .form-group textarea { resize: vertical; min-height: 120px; }
+
+    /* Timeline */
+    .timeline { border-left: 2px solid var(--border); padding-left: 16px; margin-top: 12px; }
+    .timeline-item { margin-bottom: 16px; position: relative; }
+    .timeline-item::before {
+      content: '';
+      position: absolute;
+      left: -21px;
+      top: 4px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--primary);
+      border: 2px solid var(--surface);
+    }
+    .timeline-date { font-size: 11px; color: var(--text-muted); }
+    .timeline-text { font-size: 13px; margin-top: 2px; }
+    .timeline-stage {
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: var(--surface-2);
+      color: var(--text-muted);
+      display: inline-block;
+      margin-top: 2px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-muted);
+    }
+    .empty-state p { margin-top: 8px; font-size: 14px; }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 12px 20px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      z-index: 300;
+      display: none;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    }
+    .toast.success { border-color: var(--success); }
+    .toast.error { border-color: var(--danger); }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .header { flex-direction: column; gap: 8px; }
+      .container { padding: 12px; }
+      .funnel-label { width: 80px; font-size: 11px; }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Header -->
+  <div class="header">
+    <h1>VPT Scanner - Outreach Pipeline</h1>
+    <div class="header-links">
+      <a href="/">Properties</a>
+      <a href="/map">Map</a>
+      <a href="/admin">Admin</a>
+      <a href="/outreach" class="active">Outreach</a>
+      <button class="gear-btn" onclick="openSettings()" title="Settings">&#9881;</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Pipeline Funnel -->
+    <div class="card">
+      <h2>Pipeline Overview</h2>
+      <div class="funnel" id="funnel"></div>
+    </div>
+
+    <!-- Actions -->
+    <div class="card">
+      <div class="action-bar">
+        <button class="btn btn-primary" onclick="scoreAll()" id="btn-score">Score All Properties</button>
+        <button class="btn btn-success" onclick="generateSelected()" id="btn-pitch">Generate Pitches</button>
+        <button class="btn" onclick="refresh()">Refresh</button>
+        <span class="status-pill" id="score-status" style="display:none;">
+          <span class="dot-pulse"></span>
+          <span id="score-status-text">Scoring...</span>
+        </span>
+        <span class="status-pill" id="pitch-status" style="display:none;">
+          <span class="dot-pulse"></span>
+          <span id="pitch-status-text">Generating...</span>
+        </span>
+        <span style="flex:1;"></span>
+        <span id="selected-count" style="font-size:13px; color:var(--text-muted);"></span>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="card" style="padding:0; overflow:hidden;">
+      <div style="padding:16px 20px 0 20px;">
+        <div class="filters">
+          <select id="filter-stage" onchange="loadList()">
+            <option value="">All Stages</option>
+            <option value="identified">Identified</option>
+            <option value="qualified">Qualified</option>
+            <option value="outreach_ready">Outreach Ready</option>
+            <option value="contacted">Contacted</option>
+            <option value="responding">Responding</option>
+            <option value="negotiating">Negotiating</option>
+            <option value="partnered">Partnered</option>
+            <option value="declined">Declined</option>
+            <option value="no_response">No Response</option>
+          </select>
+          <select id="filter-city" onchange="loadList()">
+            <option value="">All Cities</option>
+          </select>
+          <input type="number" id="filter-score" placeholder="Min Score" min="0" max="100" style="width:100px;" onchange="loadList()">
+          <span style="flex:1;"></span>
+          <span style="font-size:12px; color:var(--text-muted);" id="total-label"></span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:36px;"><input type="checkbox" class="cb" id="select-all" onchange="toggleAll(this)"></th>
+              <th data-sort="apn">APN</th>
+              <th data-sort="location_of_property">Address</th>
+              <th data-sort="city">City</th>
+              <th data-sort="outreach_score">Score</th>
+              <th>Stage</th>
+              <th>Email</th>
+              <th>VPT</th>
+              <th style="width:160px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="table-body">
+            <tr><td colspan="9" class="empty-state"><p>Loading...</p></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pager" style="padding:12px 20px;">
+        <span id="pager-info"></span>
+        <div class="pager-btns" id="pager-btns"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settings-modal">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Outreach Settings</h3>
+        <button class="modal-close" onclick="closeModal('settings-modal')">&times;</button>
+      </div>
+      <div class="form-group">
+        <label>OpenClaw Gateway URL</label>
+        <input type="url" id="set-gateway-url" placeholder="https://...">
+      </div>
+      <div class="form-group">
+        <label>Webhook Secret</label>
+        <input type="password" id="set-webhook-secret" placeholder="Secret key">
+      </div>
+      <div class="form-group">
+        <label>SMTP From Address</label>
+        <input type="email" id="set-smtp-from" placeholder="outreach@example.com">
+      </div>
+      <div class="form-group">
+        <label>Min Score Threshold</label>
+        <input type="number" id="set-min-score" min="0" max="100" value="50">
+      </div>
+      <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:20px;">
+        <button class="btn" onclick="closeModal('settings-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Property Detail Modal -->
+  <div class="modal-overlay" id="detail-modal">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h3 id="detail-title">Property Detail</h3>
+        <button class="modal-close" onclick="closeModal('detail-modal')">&times;</button>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;" id="detail-grid">
+        <!-- Left: Pitch -->
+        <div>
+          <div class="form-group">
+            <label>Stage</label>
+            <select id="detail-stage" class="stage-select" style="width:100%; padding:10px; font-size:14px;"></select>
+          </div>
+          <div class="form-group">
+            <label>Subject Line</label>
+            <input type="text" id="detail-subject">
+          </div>
+          <div class="form-group">
+            <label>Pitch Draft</label>
+            <textarea id="detail-body" rows="10"></textarea>
+          </div>
+          <div style="display:flex; gap:10px;">
+            <button class="btn btn-primary" onclick="savePitch()">Save Pitch</button>
+            <button class="btn btn-success" onclick="sendEmail()">Send Email</button>
+          </div>
+        </div>
+        <!-- Right: History -->
+        <div>
+          <label style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.3px;">Communication History</label>
+          <div class="timeline" id="detail-timeline">
+            <div class="empty-state"><p>No history yet</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const SUPABASE_URL = '{{ supabase_url }}';
+    const SUPABASE_ANON_KEY = '{{ supabase_anon_key }}';
+    let sbClient = null;
+
+    const STAGES = [
+      'identified','qualified','outreach_ready','contacted',
+      'responding','negotiating','partnered','declined','no_response'
+    ];
+    const STAGE_LABELS = {
+      identified: 'Identified', qualified: 'Qualified', outreach_ready: 'Outreach Ready',
+      contacted: 'Contacted', responding: 'Responding', negotiating: 'Negotiating',
+      partnered: 'Partnered', declined: 'Declined', no_response: 'No Response'
+    };
+
+    let currentSort = 'outreach_score';
+    let currentOrder = 'desc';
+    let currentPage = 1;
+    const PAGE_SIZE = 25;
+    let listTotal = 0;
+    let selected = new Set();
+    let currentDetailApn = null;
+    let scorePoller = null;
+    let pitchPoller = null;
+
+    // ----- Auth helpers -----
+    function initSupabase() {
+      if (sbClient) return sbClient;
+      const lib = window.supabase;
+      if (lib && lib.createClient) {
+        sbClient = lib.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      }
+      return sbClient;
+    }
+
+    async function authHeaders() {
+      const headers = { 'Content-Type': 'application/json' };
+      const sb = initSupabase();
+      if (sb) {
+        try {
+          const { data: { session } } = await sb.auth.getSession();
+          if (session?.access_token) {
+            headers['Authorization'] = `Bearer ${session.access_token}`;
+          }
+        } catch (e) { /* session may not exist */ }
+      }
+      return headers;
+    }
+
+    async function apiFetch(url, opts = {}) {
+      const headers = await authHeaders();
+      if (opts.headers) Object.assign(headers, opts.headers);
+      opts.headers = headers;
+      const res = await fetch(url, opts);
+      if (res.status === 401) {
+        window.location.href = '/login';
+        return null;
+      }
+      return res;
+    }
+
+    // ----- Toast -----
+    function toast(msg, type = '') {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.className = 'toast' + (type ? ' ' + type : '');
+      el.style.display = 'block';
+      setTimeout(() => { el.style.display = 'none'; }, 3500);
+    }
+
+    // ----- Modal helpers -----
+    function openModal(id) { document.getElementById(id).classList.add('open'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+    // Close modals on overlay click
+    document.querySelectorAll('.modal-overlay').forEach(ov => {
+      ov.addEventListener('click', e => {
+        if (e.target === ov) ov.classList.remove('open');
+      });
+    });
+
+    // ----- Pipeline funnel -----
+    async function loadPipeline() {
+      try {
+        const res = await apiFetch('/api/outreach/pipeline');
+        if (!res) return;
+        const json = await res.json();
+        if (!json.success) return;
+        const data = json.data || {};
+        const total = STAGES.reduce((s, k) => s + (data[k] || 0), 0) || 1;
+        const funnel = document.getElementById('funnel');
+        funnel.innerHTML = '';
+        STAGES.forEach(stage => {
+          const count = data[stage] || 0;
+          const pct = Math.max((count / total) * 100, count > 0 ? 3 : 0);
+          const row = document.createElement('div');
+          row.className = 'funnel-row';
+          row.innerHTML = `
+            <span class="funnel-label">${STAGE_LABELS[stage]}</span>
+            <div class="funnel-bar-wrap" onclick="filterByStage('${stage}')">
+              <div class="funnel-bar stage-${stage}" style="width:${pct}%">${count > 0 ? count : ''}</div>
+            </div>
+            <span class="funnel-count">${count.toLocaleString()}</span>`;
+          funnel.appendChild(row);
+        });
+      } catch (e) {
+        console.error('Pipeline load error:', e);
+      }
+    }
+
+    function filterByStage(stage) {
+      document.getElementById('filter-stage').value = stage;
+      currentPage = 1;
+      loadList();
+    }
+
+    // ----- Property list -----
+    async function loadList() {
+      const stage = document.getElementById('filter-stage').value;
+      const city = document.getElementById('filter-city').value;
+      const minScore = document.getElementById('filter-score').value;
+      const offset = (currentPage - 1) * PAGE_SIZE;
+
+      const params = new URLSearchParams({
+        sort: currentSort,
+        order: currentOrder,
+        limit: PAGE_SIZE,
+        offset: offset
+      });
+      if (stage) params.set('stage', stage);
+      if (city) params.set('city', city);
+      if (minScore) params.set('min_score', minScore);
+
+      try {
+        const res = await apiFetch(`/api/outreach/list?${params}`);
+        if (!res) return;
+        const json = await res.json();
+        if (!json.success) { toast('Failed to load list', 'error'); return; }
+
+        listTotal = json.total || 0;
+        const data = json.data || [];
+        document.getElementById('total-label').textContent = `${listTotal.toLocaleString()} properties`;
+        renderTable(data);
+        renderPager();
+        updateSelectedCount();
+
+        // Populate city filter if empty
+        const citySelect = document.getElementById('filter-city');
+        if (citySelect.options.length <= 1) {
+          const cities = [...new Set(data.map(r => r.city).filter(Boolean))].sort();
+          cities.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c;
+            opt.textContent = c;
+            citySelect.appendChild(opt);
+          });
+        }
+      } catch (e) {
+        console.error('List load error:', e);
+        toast('Error loading data', 'error');
+      }
+    }
+
+    function renderTable(rows) {
+      const tbody = document.getElementById('table-body');
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="9" class="empty-state"><p>No properties found</p></td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map(r => {
+        const apn = r.apn || '';
+        const score = r.outreach_score;
+        const scoreClass = score == null ? 'score-none' : score >= 70 ? 'score-high' : score >= 50 ? 'score-mid' : 'score-low';
+        const scoreText = score != null ? score : '-';
+        const stage = r.outreach_stage || 'identified';
+        const email = r.owner_email || '';
+        const hasVpt = r.has_vpt;
+        const checked = selected.has(apn) ? 'checked' : '';
+
+        const stageOpts = STAGES.map(s =>
+          `<option value="${s}" ${s === stage ? 'selected' : ''}>${STAGE_LABELS[s]}</option>`
+        ).join('');
+
+        return `<tr>
+          <td><input type="checkbox" class="cb" value="${apn}" ${checked} onchange="toggleSelect(this)"></td>
+          <td><a href="#" onclick="openDetail('${apn}'); return false;">${apn}</a></td>
+          <td>${r.location_of_property || '-'}</td>
+          <td>${r.city || '-'}</td>
+          <td><span class="score-badge ${scoreClass}">${scoreText}</span></td>
+          <td><select class="stage-select" onchange="changeStage('${apn}', this.value)">${stageOpts}</select></td>
+          <td style="max-width:160px; overflow:hidden; text-overflow:ellipsis;">${email || '<span style="color:var(--text-muted);">-</span>'}</td>
+          <td>${hasVpt ? '<span class="vpt-yes">YES</span>' : '<span class="vpt-no">No</span>'}</td>
+          <td class="row-actions">
+            <button class="btn" onclick="generatePitch('${apn}')" title="Generate Pitch">Pitch</button>
+            <button class="btn" onclick="openDetail('${apn}')" title="View detail">View</button>
+            <button class="btn btn-success" onclick="sendOne('${apn}')" title="Send email">Send</button>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    function renderPager() {
+      const totalPages = Math.ceil(listTotal / PAGE_SIZE) || 1;
+      const info = document.getElementById('pager-info');
+      const start = Math.min((currentPage - 1) * PAGE_SIZE + 1, listTotal);
+      const end = Math.min(currentPage * PAGE_SIZE, listTotal);
+      info.textContent = listTotal > 0 ? `${start}-${end} of ${listTotal}` : 'No results';
+
+      const btns = document.getElementById('pager-btns');
+      btns.innerHTML = '';
+      if (totalPages <= 1) return;
+
+      const addBtn = (label, page, active = false) => {
+        const b = document.createElement('button');
+        b.className = 'btn' + (active ? ' active' : '');
+        b.textContent = label;
+        b.disabled = active;
+        b.onclick = () => { currentPage = page; loadList(); };
+        btns.appendChild(b);
+      };
+
+      addBtn('Prev', currentPage - 1);
+      if (currentPage > 1) document.querySelector('#pager-btns .btn').disabled = false;
+      else document.querySelector('#pager-btns .btn').disabled = true;
+
+      const start_p = Math.max(1, currentPage - 2);
+      const end_p = Math.min(totalPages, currentPage + 2);
+      for (let i = start_p; i <= end_p; i++) {
+        addBtn(i, i, i === currentPage);
+      }
+
+      addBtn('Next', currentPage + 1);
+      const allBtns = btns.querySelectorAll('.btn');
+      allBtns[allBtns.length - 1].disabled = currentPage >= totalPages;
+    }
+
+    // ----- Sorting -----
+    document.querySelectorAll('th[data-sort]').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.dataset.sort;
+        if (currentSort === col) {
+          currentOrder = currentOrder === 'asc' ? 'desc' : 'asc';
+        } else {
+          currentSort = col;
+          currentOrder = 'desc';
+        }
+        currentPage = 1;
+        loadList();
+      });
+    });
+
+    // ----- Selection -----
+    function toggleAll(el) {
+      document.querySelectorAll('#table-body .cb').forEach(cb => {
+        cb.checked = el.checked;
+        if (el.checked) selected.add(cb.value);
+        else selected.delete(cb.value);
+      });
+      updateSelectedCount();
+    }
+
+    function toggleSelect(cb) {
+      if (cb.checked) selected.add(cb.value);
+      else selected.delete(cb.value);
+      updateSelectedCount();
+    }
+
+    function updateSelectedCount() {
+      const el = document.getElementById('selected-count');
+      el.textContent = selected.size > 0 ? `${selected.size} selected` : '';
+    }
+
+    // ----- Stage change -----
+    async function changeStage(apn, stage) {
+      try {
+        const res = await apiFetch(`/api/outreach/${apn}/stage`, {
+          method: 'POST',
+          body: JSON.stringify({ stage, notes: '' })
+        });
+        if (!res) return;
+        const json = await res.json();
+        if (json.success) {
+          toast(`Stage updated to ${STAGE_LABELS[stage]}`);
+          loadPipeline();
+        } else {
+          toast(json.error || 'Failed to update stage', 'error');
+        }
+      } catch (e) {
+        toast('Error updating stage', 'error');
+      }
+    }
+
+    // ----- Score all -----
+    async function scoreAll() {
+      try {
+        const btn = document.getElementById('btn-score');
+        btn.disabled = true;
+        const res = await apiFetch('/api/outreach/score', {
+          method: 'POST',
+          body: JSON.stringify({ apns: null })
+        });
+        if (!res) return;
+        const json = await res.json();
+        toast(json.message || 'Scoring started');
+        startScorePolling();
+      } catch (e) {
+        toast('Error starting scoring', 'error');
+        document.getElementById('btn-score').disabled = false;
+      }
+    }
+
+    function startScorePolling() {
+      const pill = document.getElementById('score-status');
+      pill.style.display = 'inline-flex';
+      if (scorePoller) clearInterval(scorePoller);
+      scorePoller = setInterval(async () => {
+        try {
+          const res = await apiFetch('/api/outreach/score/status');
+          if (!res) return;
+          const d = await res.json();
+          document.getElementById('score-status-text').textContent =
+            `Scoring ${d.completed || 0}/${d.total || 0}`;
+          if (!d.is_running) {
+            clearInterval(scorePoller);
+            scorePoller = null;
+            pill.style.display = 'none';
+            document.getElementById('btn-score').disabled = false;
+            if (d.failed > 0) toast(`Scoring done. ${d.failed} failed.`, 'error');
+            else toast('Scoring complete', 'success');
+            refresh();
+          }
+        } catch (e) { /* ignore polling errors */ }
+      }, 2000);
+    }
+
+    // ----- Pitch generation -----
+    async function generateSelected() {
+      if (selected.size === 0) { toast('Select properties first', 'error'); return; }
+      await startPitchGeneration([...selected]);
+    }
+
+    async function generatePitch(apn) {
+      await startPitchGeneration([apn]);
+    }
+
+    async function startPitchGeneration(apns) {
+      try {
+        const btn = document.getElementById('btn-pitch');
+        btn.disabled = true;
+        const res = await apiFetch('/api/outreach/pitch/generate', {
+          method: 'POST',
+          body: JSON.stringify({ apns })
+        });
+        if (!res) return;
+        const json = await res.json();
+        toast(json.message || 'Pitch generation started');
+        startPitchPolling();
+      } catch (e) {
+        toast('Error starting pitch generation', 'error');
+        document.getElementById('btn-pitch').disabled = false;
+      }
+    }
+
+    function startPitchPolling() {
+      const pill = document.getElementById('pitch-status');
+      pill.style.display = 'inline-flex';
+      if (pitchPoller) clearInterval(pitchPoller);
+      pitchPoller = setInterval(async () => {
+        try {
+          const res = await apiFetch('/api/outreach/pitch/status');
+          if (!res) return;
+          const d = await res.json();
+          const txt = d.current_apn ? `Pitch: ${d.current_apn}` : `Pitch: ${d.completed || 0} done`;
+          document.getElementById('pitch-status-text').textContent = txt;
+          if (!d.is_running) {
+            clearInterval(pitchPoller);
+            pitchPoller = null;
+            pill.style.display = 'none';
+            document.getElementById('btn-pitch').disabled = false;
+            if (!d.api_configured) toast('API not configured - check settings', 'error');
+            else if (d.failed > 0) toast(`Pitches done. ${d.failed} failed.`, 'error');
+            else toast('Pitch generation complete', 'success');
+            loadList();
+          }
+        } catch (e) { /* ignore */ }
+      }, 2000);
+    }
+
+    // ----- Detail modal -----
+    async function openDetail(apn) {
+      currentDetailApn = apn;
+      document.getElementById('detail-title').textContent = `Property: ${apn}`;
+
+      // Populate stage dropdown
+      const sel = document.getElementById('detail-stage');
+      sel.innerHTML = STAGES.map(s => `<option value="${s}">${STAGE_LABELS[s]}</option>`).join('');
+
+      // Reset
+      document.getElementById('detail-subject').value = '';
+      document.getElementById('detail-body').value = '';
+      document.getElementById('detail-timeline').innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
+      openModal('detail-modal');
+
+      try {
+        const res = await apiFetch(`/api/outreach/${apn}`);
+        if (!res) return;
+        const json = await res.json();
+        if (!json.success) { toast('Failed to load detail', 'error'); return; }
+
+        const o = json.outreach || {};
+        sel.value = o.outreach_stage || 'identified';
+        document.getElementById('detail-subject').value = o.pitch_subject || '';
+        document.getElementById('detail-body').value = o.pitch_body || '';
+
+        const msgs = json.messages || [];
+        const tl = document.getElementById('detail-timeline');
+        if (!msgs.length) {
+          tl.innerHTML = '<div class="empty-state"><p>No communication history</p></div>';
+        } else {
+          tl.innerHTML = msgs.map(m => `
+            <div class="timeline-item">
+              <div class="timeline-date">${new Date(m.created_at).toLocaleString()}</div>
+              <div class="timeline-text">${escHtml(m.notes || m.message || '')}</div>
+              ${m.stage ? `<span class="timeline-stage">${STAGE_LABELS[m.stage] || m.stage}</span>` : ''}
+            </div>`).join('');
+        }
+      } catch (e) {
+        toast('Error loading property detail', 'error');
+      }
+    }
+
+    async function savePitch() {
+      if (!currentDetailApn) return;
+      const subject = document.getElementById('detail-subject').value;
+      const body = document.getElementById('detail-body').value;
+      try {
+        const res = await apiFetch(`/api/outreach/${currentDetailApn}/pitch`, {
+          method: 'PUT',
+          body: JSON.stringify({ subject, body })
+        });
+        if (!res) return;
+        const json = await res.json();
+        if (json.success) toast('Pitch saved', 'success');
+        else toast(json.error || 'Failed to save', 'error');
+      } catch (e) {
+        toast('Error saving pitch', 'error');
+      }
+    }
+
+    async function sendEmail() {
+      if (!currentDetailApn) return;
+      if (!confirm('Send outreach email for this property?')) return;
+      await doSend(currentDetailApn);
+    }
+
+    async function sendOne(apn) {
+      if (!confirm(`Send outreach email for ${apn}?`)) return;
+      await doSend(apn);
+    }
+
+    async function doSend(apn) {
+      try {
+        const res = await apiFetch(`/api/outreach/${apn}/send`, { method: 'POST' });
+        if (!res) return;
+        const json = await res.json();
+        if (json.success) {
+          toast('Email sent', 'success');
+          loadList();
+          loadPipeline();
+        } else {
+          toast(json.error || 'Failed to send', 'error');
+        }
+      } catch (e) {
+        toast('Error sending email', 'error');
+      }
+    }
+
+    // Stage change from detail modal
+    document.getElementById('detail-stage').addEventListener('change', async function() {
+      if (!currentDetailApn) return;
+      await changeStage(currentDetailApn, this.value);
+    });
+
+    // ----- Settings -----
+    async function openSettings() {
+      try {
+        const res = await apiFetch('/api/outreach/settings');
+        if (!res) return;
+        const json = await res.json();
+        if (json.success) {
+          const d = json.data || {};
+          document.getElementById('set-gateway-url').value = d.openclaw_gateway_url || '';
+          document.getElementById('set-webhook-secret').value = d.webhook_secret || '';
+          document.getElementById('set-smtp-from').value = d.smtp_from_address || '';
+          document.getElementById('set-min-score').value = d.min_score_threshold ?? 50;
+        }
+      } catch (e) { /* proceed with empty form */ }
+      openModal('settings-modal');
+    }
+
+    async function saveSettings() {
+      const payload = {
+        openclaw_gateway_url: document.getElementById('set-gateway-url').value,
+        webhook_secret: document.getElementById('set-webhook-secret').value,
+        smtp_from_address: document.getElementById('set-smtp-from').value,
+        min_score_threshold: parseInt(document.getElementById('set-min-score').value) || 50
+      };
+      try {
+        const res = await apiFetch('/api/outreach/settings', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        if (!res) return;
+        const json = await res.json();
+        if (json.success) {
+          toast('Settings saved', 'success');
+          closeModal('settings-modal');
+        } else {
+          toast(json.error || 'Failed to save settings', 'error');
+        }
+      } catch (e) {
+        toast('Error saving settings', 'error');
+      }
+    }
+
+    // ----- Utility -----
+    function escHtml(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    // ----- Refresh everything -----
+    async function refresh() {
+      await Promise.all([loadPipeline(), loadList()]);
+    }
+
+    // ----- Check running tasks on load -----
+    async function checkRunningTasks() {
+      try {
+        const [scoreRes, pitchRes] = await Promise.all([
+          apiFetch('/api/outreach/score/status'),
+          apiFetch('/api/outreach/pitch/status')
+        ]);
+        if (scoreRes) {
+          const d = await scoreRes.json();
+          if (d.is_running) startScorePolling();
+        }
+        if (pitchRes) {
+          const d = await pitchRes.json();
+          if (d.is_running) startPitchPolling();
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    // ----- Init -----
+    document.addEventListener('DOMContentLoaded', () => {
+      initSupabase();
+      refresh();
+      checkRunningTasks();
+    });
+  </script>
+</body>
+
+</html>
