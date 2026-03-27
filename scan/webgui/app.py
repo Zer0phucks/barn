@@ -404,6 +404,7 @@ def search_page():
     page_size = min(max(int(request.args.get("page_size") or 25), 10), 200)
 
     allowed_sorts = {
+        "added_at",
         "location_of_property",
         "apn",
         "parcel_number",
@@ -461,6 +462,7 @@ def search_page():
                 "pdf_file": r["pdf_file"],
                 "bill_url": r["bill_url"] or "",
                 "apn": apn,
+                "added_at": r.get("added_at"),
                 "parcel_number": r["parcel_number"],
                 "tracer_number": r["tracer_number"],
                 "location_of_property": r["location_of_property"],

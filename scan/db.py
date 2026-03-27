@@ -632,6 +632,7 @@ def _sort_rows_by_contact_field(rows: list[dict], sort: str, order: str) -> list
 
 _DIRECT_BILL_COLUMNS = (
     "apn",
+    "added_at",
     "pdf_file",
     "bill_url",
     "parcel_number",

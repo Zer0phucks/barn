@@ -533,6 +533,7 @@
       Out of State
     </label>
     <select name="sort">
+      <option value="added_at" {% if sort=="added_at" %}selected{% endif %}>Date Added</option>
       <option value="location_of_property" {% if sort=="location_of_property" %}selected{% endif %}>Location
       </option>
       <option value="city" {% if sort=="city" %}selected{% endif %}>City</option>
@@ -607,6 +608,7 @@
             </div>
           </th>
           <th>City</th>
+          <th>Date Added</th>
           <th>Location</th>
           <th>APN</th>
           <th>VPT</th>
@@ -637,6 +639,7 @@
               onchange="toggleRowSelection('{{ r.apn }}', this.checked)" />
           </td>
           <td>{{ r.city }}</td>
+          <td>{{ r.added_at or "-" }}</td>
           <td>
             <a href="{{ url_for('property_detail', apn=r.apn, return_to=return_to_path) }}" title="Open Property Workspace">
               {{ r.location_of_property }}
