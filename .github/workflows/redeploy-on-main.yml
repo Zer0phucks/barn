@@ -30,6 +30,9 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_REPO_DIR: ${{ secrets.DEPLOY_REPO_DIR }}
         run: |
-          REPO_DIR="${DEPLOY_REPO_DIR:-/home/nsnfrd768_gmail_com/barn}"
-          ssh -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+          REPO_DIR="$(printf '%s' "${DEPLOY_REPO_DIR:-/home/nsnfrd768_gmail_com/barn}" | tr -d '\r\n')"
+          DEPLOY_HOST_CLEAN="$(printf '%s' "${DEPLOY_HOST}" | tr -d '\r\n')"
+          DEPLOY_USER_CLEAN="$(printf '%s' "${DEPLOY_USER}" | tr -d '\r\n')"
+          DEPLOY_PORT_CLEAN="$(printf '%s' "${DEPLOY_PORT:-22}" | tr -d '\r\n')"
+          ssh -p "${DEPLOY_PORT_CLEAN:-22}" "${DEPLOY_USER_CLEAN}@${DEPLOY_HOST_CLEAN}" \
             "cd '${REPO_DIR}' && ./deploy.sh"
