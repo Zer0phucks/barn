@@ -347,6 +347,11 @@ def _is_get_bills_filtered_missing_error(exc: Exception) -> bool:
     )
 
 
+def _is_get_bills_filtered_missing_added_at_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "added_at" in msg and "does not exist" in msg
+
+
 def _execute_get_bills_filtered_rpc(
     payload: dict[str, Any],
     owner_name_filter: str = "",
@@ -625,6 +630,216 @@ def _sort_rows_by_contact_field(rows: list[dict], sort: str, order: str) -> list
     return [row for _, row in present] + missing
 
 
+_DIRECT_BILL_COLUMNS = (
+    "apn",
+    "pdf_file",
+    "bill_url",
+    "parcel_number",
+    "tracer_number",
+    "location_of_property",
+    "tax_year",
+    "last_payment",
+    "delinquent",
+    "power_status",
+    "has_vpt",
+    "vpt_marker",
+    "city",
+    "condition_score",
+    "condition_notes",
+    "streetview_image_path",
+    "property_search_url",
+    "mailing_search_url",
+    "research_status",
+    "situs_zip",
+    "owner_name",
+    "important_notes",
+)
+
+
+def _escape_postgrest_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace(",", "\\,")
+
+
+def _parse_row_json_value(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _attach_parcel_row_json(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    apns = [str(row.get("apn") or "") for row in rows if row.get("apn")]
+    if not apns:
+        return rows
+
+    parcel_map: dict[str, Any] = {}
+    chunk_size = 500
+    for index in range(0, len(apns), chunk_size):
+        chunk = apns[index : index + chunk_size]
+        result = get_client().table("parcels").select("APN,row_json").in_("APN", chunk).execute()
+        for parcel_row in (result.data or []):
+            apn = str(parcel_row.get("APN") or "")
+            if apn:
+                parcel_map[apn] = parcel_row.get("row_json")
+
+    for row in rows:
+        apn = str(row.get("apn") or "")
+        row["row_json"] = parcel_map.get(apn)
+        row.setdefault("added_at", None)
+
+    return rows
+
+
+def _row_matches_basic_fallback_filters(
+    row: dict[str, Any],
+    q: str = "",
+    zip_filter: str = "",
+    owner_name_filter: str = "",
+    outofstate_filter: str = "",
+) -> bool:
+    query = (q or "").strip().lower()
+    if query:
+        haystacks = (
+            str(row.get("location_of_property") or "").lower(),
+            str(row.get("apn") or "").lower(),
+            str(row.get("owner_name") or "").lower(),
+        )
+        if not any(query in haystack for haystack in haystacks):
+            return False
+
+    owner_name = (owner_name_filter or "").strip().lower()
+    if owner_name and owner_name not in str(row.get("owner_name") or "").lower():
+        return False
+
+    zip_tokens = [token.strip().lower() for token in (zip_filter or "").split(",") if token.strip()]
+    if zip_tokens:
+        apn = str(row.get("apn") or "").lower()
+        location = str(row.get("location_of_property") or "").lower()
+        if not any(apn.startswith(token) or token in location for token in zip_tokens):
+            return False
+
+    if (outofstate_filter or "").strip() == "1":
+        parcel = _parse_row_json_value(row.get("row_json"))
+        mail_state = str(parcel.get("MailState") or "").strip().upper()
+        if not mail_state or mail_state == "CA":
+            return False
+
+    return True
+
+
+def _fallback_sort_key(value: Any) -> tuple[int, Any]:
+    if value is None:
+        return (1, "")
+    if isinstance(value, (int, float)):
+        return (0, value)
+    return (0, str(value).lower())
+
+
+def _sort_fallback_rows(rows: list[dict[str, Any]], sort: str, order: str) -> list[dict[str, Any]]:
+    sort_col = (sort or "location_of_property").strip()
+    if sort_col == "added_at":
+        sort_col = "location_of_property"
+    reverse = (order or "").lower() == "desc"
+    return sorted(rows, key=lambda row: _fallback_sort_key(row.get(sort_col)), reverse=reverse)
+
+
+def _fetch_bills_direct_fallback(
+    q: str = "",
+    zip_filter: str = "",
+    power_filter: str = "",
+    fav_filter: str = "",
+    city_filter: str = "",
+    vpt_filter: str = "",
+    delinquent_filter: str = "",
+    condition_filter: str = "",
+    outofstate_filter: str = "",
+    research_filter: str = "",
+    owner_name_filter: str = "",
+    sort: str = "location_of_property",
+    order: str = "asc",
+    page: int = 1,
+    page_size: int = 25,
+) -> tuple[list[dict], int]:
+    client = get_client()
+    rows: list[dict[str, Any]] = []
+    batch_size = 500
+    offset = 0
+    favorites_apns = get_favorites_apns() if (fav_filter or "").strip() == "1" else []
+    if (fav_filter or "").strip() == "1" and not favorites_apns:
+        return [], 0
+
+    normalized_research = _normalize_research_filter(research_filter)
+    direct_columns = ",".join(_DIRECT_BILL_COLUMNS)
+
+    while True:
+        query = client.table("bills").select(direct_columns).range(offset, offset + batch_size - 1)
+        if (power_filter or "").strip():
+            query = query.eq("power_status", (power_filter or "").strip())
+        if (city_filter or "").strip():
+            query = query.eq("city", (city_filter or "").strip().upper())
+        if (vpt_filter or "").strip() == "1":
+            query = query.eq("has_vpt", 1)
+        if (delinquent_filter or "").strip() == "1":
+            query = query.eq("delinquent", 1)
+        if favorites_apns:
+            query = query.in_("apn", favorites_apns)
+
+        condition_value = (condition_filter or "").strip().lower()
+        if condition_value == "good":
+            query = query.gte("condition_score", 7)
+        elif condition_value == "fair":
+            query = query.gte("condition_score", 4).lt("condition_score", 7)
+        elif condition_value == "poor":
+            query = query.lt("condition_score", 4)
+        elif condition_value == "unscored":
+            query = query.is_("condition_score", "null")
+
+        if normalized_research == "unchecked":
+            query = query.or_("research_status.is.null,research_status.eq.unchecked")
+        elif normalized_research:
+            query = query.eq("research_status", normalized_research)
+
+        result = query.execute()
+        chunk = list(result.data or [])
+        if not chunk:
+            break
+        rows.extend(chunk)
+        if len(chunk) < batch_size:
+            break
+        offset += batch_size
+
+    rows = _attach_parcel_row_json(rows)
+    rows = [
+        row
+        for row in rows
+        if _row_matches_basic_fallback_filters(
+            row,
+            q=q,
+            zip_filter=zip_filter,
+            owner_name_filter=owner_name_filter,
+            outofstate_filter=outofstate_filter,
+        )
+    ]
+    rows = _sort_fallback_rows(rows, sort=sort, order=order)
+    total = len(rows)
+
+    if page_size == 0:
+        return rows, total
+
+    limit = min(max(int(page_size), 10), 200)
+    page_number = max(int(page), 1)
+    start = (page_number - 1) * limit
+    end = start + limit
+    paged_rows = rows[start:end]
+    paged_rows = _enrich_rows_with_contact_fields(paged_rows)
+    return paged_rows, total
+
+
 def get_bills_with_parcels_filtered(
     q: str = "",
     zip_filter: str = "",
@@ -665,8 +880,28 @@ def get_bills_with_parcels_filtered(
         "p_offset": offset,
         "p_research": _normalize_research_filter(research_filter) or None,
     }
-
-    r = _execute_get_bills_filtered_rpc(payload, owner_name_filter=owner_name_filter)
+    try:
+        r = _execute_get_bills_filtered_rpc(payload, owner_name_filter=owner_name_filter)
+    except Exception as exc:
+        if _is_get_bills_filtered_missing_added_at_error(exc):
+            return _fetch_bills_direct_fallback(
+                q=q,
+                zip_filter=zip_filter,
+                power_filter=power_filter,
+                fav_filter=fav_filter,
+                city_filter=city_filter,
+                vpt_filter=vpt_filter,
+                delinquent_filter=delinquent_filter,
+                condition_filter=condition_filter,
+                outofstate_filter=outofstate_filter,
+                research_filter=research_filter,
+                owner_name_filter=owner_name_filter,
+                sort=sort,
+                order=order,
+                page=page,
+                page_size=page_size,
+            )
+        raise
 
     rows, total = _parse_get_bills_filtered_response(r.data)
     rows = _enrich_rows_with_contact_fields(rows)
