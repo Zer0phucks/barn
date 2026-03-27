@@ -56,7 +56,7 @@ class RootDbRpcPayloadTests(unittest.TestCase):
         self.assertEqual("get_bills_for_map", fake_client.payload["name"])
         self.assertNotIn("p_owner_name", fake_client.payload["payload"])
 
-    def test_get_bills_filtered_does_not_send_removed_owner_name_arg(self) -> None:
+    def test_get_bills_filtered_sends_owner_name_arg_to_disambiguate_overloads(self) -> None:
         fake_client = _FakeClient()
 
         with patch("db.get_client", return_value=fake_client), patch(
@@ -65,7 +65,7 @@ class RootDbRpcPayloadTests(unittest.TestCase):
             db.get_bills_with_parcels_filtered(q="oakland", city_filter="oakland")
 
         self.assertEqual("get_bills_filtered", fake_client.payload["name"])
-        self.assertNotIn("p_owner_name", fake_client.payload["payload"])
+        self.assertEqual("", fake_client.payload["payload"]["p_owner_name"])
 
 
 class WebGuiDbImplRpcPayloadTests(unittest.TestCase):
@@ -84,7 +84,7 @@ class WebGuiDbImplRpcPayloadTests(unittest.TestCase):
         self.assertEqual("get_bills_for_map", fake_client.payload["name"])
         self.assertNotIn("p_owner_name", fake_client.payload["payload"])
 
-    def test_get_bills_filtered_does_not_send_removed_owner_name_arg(self) -> None:
+    def test_get_bills_filtered_sends_owner_name_arg_to_disambiguate_overloads(self) -> None:
         fake_client = _FakeClient()
 
         with patch.object(self.webgui_db_impl, "get_client", return_value=fake_client), patch.object(
@@ -93,4 +93,4 @@ class WebGuiDbImplRpcPayloadTests(unittest.TestCase):
             self.webgui_db_impl.get_bills_with_parcels_filtered(q="oakland", city_filter="oakland")
 
         self.assertEqual("get_bills_filtered", fake_client.payload["name"])
-        self.assertNotIn("p_owner_name", fake_client.payload["payload"])
+        self.assertEqual("", fake_client.payload["payload"]["p_owner_name"])

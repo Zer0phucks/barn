@@ -704,9 +704,11 @@ export type Database = {
               p_limit?: number
               p_offset?: number
               p_order?: string
+              p_owner_name?: string
               p_outofstate?: number
               p_power?: string
               p_q?: string
+              p_research?: string
               p_sort?: string
               p_vpt?: number
               p_zip?: string

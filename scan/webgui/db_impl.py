@@ -244,6 +244,54 @@ def _is_get_bills_filtered_ambiguous_error(exc: Exception) -> bool:
     )
 
 
+def _is_get_bills_filtered_missing_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return (
+        "get_bills_filtered" in msg
+        and (
+            "could not find the function public.get_bills_filtered" in msg
+            or "function public.get_bills_filtered" in msg
+        )
+    )
+
+
+def _execute_get_bills_filtered_rpc(
+    payload: dict[str, Any],
+    owner_name_filter: str = "",
+) -> Any:
+    owner_name = (owner_name_filter or "").strip()
+    attempts: list[dict[str, Any]] = []
+
+    newest_payload = dict(payload)
+    newest_payload["p_owner_name"] = owner_name
+    attempts.append(newest_payload)
+
+    current_payload = dict(payload)
+    attempts.append(current_payload)
+
+    if "p_research" in current_payload:
+        legacy_payload = dict(current_payload)
+        legacy_payload.pop("p_research", None)
+        attempts.append(legacy_payload)
+
+    last_exc: Exception | None = None
+    for index, candidate in enumerate(attempts):
+        try:
+            return get_client().rpc("get_bills_filtered", candidate).execute()
+        except Exception as exc:
+            last_exc = exc
+            is_last_attempt = index == len(attempts) - 1
+            if is_last_attempt:
+                raise
+            if _is_get_bills_filtered_missing_error(exc) or _is_get_bills_filtered_ambiguous_error(exc):
+                continue
+            raise
+
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("get_bills_filtered RPC did not execute")
+
+
 def _get_apns_for_research_filter(research_filter: str) -> set[str]:
     normalized = _normalize_research_filter(research_filter)
     if not normalized:
@@ -491,7 +539,7 @@ def _fetch_all_rows_for_filtered_payload(payload: dict[str, Any], normalized_res
         if use_research_param:
             query_payload["p_research"] = normalized_research
         try:
-            scan_r = get_client().rpc("get_bills_filtered", query_payload).execute()
+            scan_r = _execute_get_bills_filtered_rpc(query_payload)
         except Exception as exc:
             if not use_research_param and _is_get_bills_filtered_ambiguous_error(exc):
                 use_research_param = True
@@ -589,7 +637,7 @@ def get_bills_with_parcels_filtered(
     needs_contact_sort = (sort or "").strip() in {"primary_resident_age", "deceased_count"}
 
     if not needs_contact_post_filter and not needs_contact_sort:
-        r = get_client().rpc("get_bills_filtered", payload).execute()
+        r = _execute_get_bills_filtered_rpc(payload, owner_name_filter=owner_name_filter)
         return _parse_get_bills_filtered_response(r.data)
 
     rows = _fetch_all_rows_for_filtered_payload(payload, normalized_research)

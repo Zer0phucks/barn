@@ -331,6 +331,7 @@ const buildRpcArgs = (filters: VPTFilters, limit: number, offset: number) => ({
   p_limit: limit,
   p_offset: offset,
   p_research: filters.research || "",
+  p_owner_name: "",
 });
 
 const buildLegacyRpcArgs = (filters: VPTFilters, limit: number, offset: number) => ({
@@ -349,7 +350,7 @@ const buildLegacyRpcArgs = (filters: VPTFilters, limit: number, offset: number) 
   p_offset: offset,
 });
 
-const isMissingResearchOverload = (message: string | undefined): boolean => {
+const isMissingRpcOverload = (message: string | undefined): boolean => {
   if (!message) return false;
   return (
     message.includes("Could not find the function public.get_bills_filtered") ||
@@ -560,7 +561,7 @@ export async function vptGetProperties(filters: VPTFilters = {}): Promise<VPTPro
   ]);
 
   let finalResult = rpcResult;
-  if (rpcResult.error && isMissingResearchOverload(rpcResult.error.message)) {
+  if (rpcResult.error && isMissingRpcOverload(rpcResult.error.message)) {
     finalResult = await supabase.rpc(
       "get_bills_filtered",
       buildLegacyRpcArgs(filters, pageSize, offset)
