@@ -28,6 +28,8 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_REPO_DIR: ${{ secrets.DEPLOY_REPO_DIR }}
         run: |
+          REPO_DIR="${DEPLOY_REPO_DIR:-/home/nsnfrd768_gmail_com/barn}"
           ssh -p "${DEPLOY_PORT:-22}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            'cd /home/noob/barn && ./scripts/redeploy_local.sh'
+            "cd '${REPO_DIR}' && ./deploy.sh"

@@ -5,10 +5,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/noob/barn/scan
-EnvironmentFile=/home/noob/barn/scan/.worker.env
+WorkingDirectory=%h/barn/scan
+EnvironmentFile=%h/barn/scan/.worker.env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/home/noob/barn/scan/.venv/bin/python /home/noob/barn/scan/webgui/app.py --skip-check
+ExecStart=%h/barn/scan/.venv/bin/python %h/barn/scan/webgui/app.py --skip-check
 Restart=always
 RestartSec=5
 

@@ -6,9 +6,9 @@ Requires=barn-vpt-worker.service
 
 [Service]
 Type=simple
-WorkingDirectory=/home/noob/barn/scan
-EnvironmentFile=/home/noob/barn/scan/.worker.env
-ExecStart=/home/noob/barn/scan/service/run_vpt_tunnel_sync.sh
+WorkingDirectory=%h/barn/scan
+EnvironmentFile=%h/barn/scan/.worker.env
+ExecStart=%h/barn/scan/service/run_vpt_tunnel_sync.sh
 Restart=always
 RestartSec=5
 

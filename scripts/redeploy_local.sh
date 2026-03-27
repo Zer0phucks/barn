@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_DIR="${REPO_DIR:-/home/noob/barn}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_DIR="${REPO_DIR:-${DEFAULT_REPO_DIR}}"
 BRANCH="${BRANCH:-main}"
 SCAN_DIR="${REPO_DIR}/scan"
 WEB_DIR="${REPO_DIR}/web"
 SYSTEMD_USER_DIR="${SYSTEMD_USER_DIR:-${HOME}/.config/systemd/user}"
+SYSTEMD_SCOPE="${SYSTEMD_SCOPE:-auto}"
+SYSTEMD_SERVICE="${SYSTEMD_SERVICE:-barn-scan.service}"
 if command -v /usr/bin/python3 >/dev/null 2>&1; then
   DEFAULT_PYTHON_BIN="/usr/bin/python3"
 else
@@ -27,8 +31,7 @@ Refreshes the local BARN deployment by:
   1. Fast-forwarding the repo to origin/main
   2. Rebuilding the Python virtualenv if needed
   3. Installing scan/web dependencies
-  4. Installing the user systemd units
-  5. Restarting the worker and tunnel services
+  4. Restarting the configured app services
 
 Options:
   --skip-pull            Do not fetch/pull before rebuilding
@@ -110,18 +113,35 @@ npm --prefix "$WEB_DIR" install --silent
 log "Building web app"
 npm --prefix "$WEB_DIR" run build
 
-log "Installing user service units"
-install -m 0644 "${SCAN_DIR}/service/barn-vpt-worker.service" "${SYSTEMD_USER_DIR}/barn-vpt-worker.service"
-install -m 0644 "${SCAN_DIR}/service/barn-vpt-tunnel.service" "${SYSTEMD_USER_DIR}/barn-vpt-tunnel.service"
+restart_user_services() {
+  log "Installing user service units"
+  install -m 0644 "${SCAN_DIR}/service/barn-vpt-worker.service" "${SYSTEMD_USER_DIR}/barn-vpt-worker.service"
+  install -m 0644 "${SCAN_DIR}/service/barn-vpt-tunnel.service" "${SYSTEMD_USER_DIR}/barn-vpt-tunnel.service"
 
-log "Reloading systemd user daemon"
-systemctl --user daemon-reload
+  log "Reloading systemd user daemon"
+  systemctl --user daemon-reload
 
-log "Enabling BARN services"
-systemctl --user enable barn-vpt-worker.service barn-vpt-tunnel.service
+  log "Enabling BARN user services"
+  systemctl --user enable barn-vpt-worker.service barn-vpt-tunnel.service
 
-log "Restarting BARN services"
-systemctl --user restart barn-vpt-worker.service
-systemctl --user restart barn-vpt-tunnel.service
+  log "Restarting BARN user services"
+  systemctl --user restart barn-vpt-worker.service
+  systemctl --user restart barn-vpt-tunnel.service
+}
+
+restart_system_service() {
+  log "Restarting ${SYSTEMD_SERVICE}"
+  sudo systemctl restart "${SYSTEMD_SERVICE}"
+}
+
+if [[ "${SYSTEMD_SCOPE}" == "user" ]]; then
+  restart_user_services
+elif [[ "${SYSTEMD_SCOPE}" == "system" ]]; then
+  restart_system_service
+elif sudo systemctl list-unit-files "${SYSTEMD_SERVICE}" >/dev/null 2>&1; then
+  restart_system_service
+else
+  restart_user_services
+fi
 
 log "Deployment complete"
