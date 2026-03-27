@@ -12,11 +12,20 @@ Bay Area Renovating Neighbors — monorepo.
 SSH into the VM and run:
 
 ```bash
-cd /home/nsnfrd768/barn/barn
+cd /home/noob/barn
 ./deploy.sh
 ```
 
 ## systemd
 
-`barn-scan.service` WorkingDirectory and ExecStart point to `/home/nsnfrd768/barn/barn/scan/`.
+User services are managed from checked-in units in `scan/service/`:
 
+- `barn-vpt-worker.service`
+- `barn-vpt-tunnel.service`
+
+To enable push-triggered redeploys from GitHub, add these repository secrets:
+
+- `DEPLOY_HOST`
+- `DEPLOY_PORT` (optional, defaults to `22`)
+- `DEPLOY_USER`
+- `DEPLOY_SSH_KEY`

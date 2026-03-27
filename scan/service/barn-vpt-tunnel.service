@@ -1,0 +1,16 @@
+[Unit]
+Description=BARN VPT Tunnel URL Sync to Supabase
+After=network-online.target barn-vpt-worker.service
+Wants=network-online.target
+Requires=barn-vpt-worker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/noob/barn/scan
+EnvironmentFile=/home/noob/barn/scan/.worker.env
+ExecStart=/home/noob/barn/scan/service/run_vpt_tunnel_sync.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

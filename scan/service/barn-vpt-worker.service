@@ -1,0 +1,16 @@
+[Unit]
+Description=BARN VPT Worker API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/noob/barn/scan
+EnvironmentFile=/home/noob/barn/scan/.worker.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/noob/barn/scan/.venv/bin/python /home/noob/barn/scan/webgui/app.py --skip-check
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

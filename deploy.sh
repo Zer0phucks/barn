@@ -1,18 +1,6 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-REPO_DIR="/home/nsnfrd768/barn/barn"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "==> Pulling latest..."
-cd "$REPO_DIR"
-git pull origin main
-
-echo "==> Building web..."
-cd "$REPO_DIR/web"
-npm install --silent
-npm run build
-
-echo "==> Restarting barn-scan service..."
-sudo systemctl restart barn-scan
-
-echo "==> Deploy complete."
+exec "${SCRIPT_DIR}/scripts/redeploy_local.sh" "$@"
