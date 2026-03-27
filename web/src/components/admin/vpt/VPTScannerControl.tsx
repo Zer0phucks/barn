@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { RefreshCw, Play, Square, Zap, Search, Camera } from "lucide-react";
+import { RefreshCw, Play, Square, Zap, Search, Camera, Workflow } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
     vptGetScanStatus,
@@ -14,6 +14,8 @@ import {
     vptStartResearch,
     vptGetConditionStatus,
     vptStartConditionScanAll,
+    vptGetEnrichmentStatus,
+    vptStartEnrichmentAll,
     vptGetPgeStatus,
     vptStartPgeScanAll,
     vptStopPgeScan,
@@ -21,6 +23,7 @@ import {
     type VPTScanStatus,
     type VPTResearchStatus,
     type VPTConditionStatus,
+    type VPTEnrichmentStatus,
     type VPTPgeStatus,
 } from "@/services/vptApi";
 
@@ -34,6 +37,7 @@ export default function VPTScannerControl() {
     const [scanStatus, setScanStatus] = useState<VPTScanStatus | null>(null);
     const [researchStatus, setResearchStatus] = useState<VPTResearchStatus | null>(null);
     const [conditionStatus, setConditionStatus] = useState<VPTConditionStatus | null>(null);
+    const [enrichmentStatus, setEnrichmentStatus] = useState<VPTEnrichmentStatus | null>(null);
     const [pgeStatus, setPgeStatus] = useState<VPTPgeStatus | null>(null);
     const [selectedCity, setSelectedCity] = useState<string>("");
     const [logs, setLogs] = useState<LogEntry[]>([
@@ -50,15 +54,17 @@ export default function VPTScannerControl() {
 
     const refreshAllStatus = useCallback(async () => {
         try {
-            const [scan, research, condition, pge] = await Promise.all([
+            const [scan, research, condition, enrichment, pge] = await Promise.all([
                 vptGetScanStatus(),
                 vptGetResearchStatus(),
                 vptGetConditionStatus(),
+                vptGetEnrichmentStatus(),
                 vptGetPgeStatus(),
             ]);
             setScanStatus(scan);
             setResearchStatus(research);
             setConditionStatus(condition);
+            setEnrichmentStatus(enrichment);
             setPgeStatus(pge);
         } catch (error) {
             addLog("Error fetching status", "error");
@@ -82,6 +88,16 @@ export default function VPTScannerControl() {
             refreshAllStatus();
         } catch (error) {
             addLog("Failed to start scan", "error");
+        }
+    };
+
+    const handleStartDailyIntake = async () => {
+        try {
+            const result = await vptStartScan(undefined, false);
+            addLog(result.message, result.status === "ok" ? "info" : "error");
+            refreshAllStatus();
+        } catch (error) {
+            addLog("Failed to start daily intake", "error");
         }
     };
 
@@ -127,6 +143,16 @@ export default function VPTScannerControl() {
             refreshAllStatus();
         } catch (error) {
             addLog("Failed to start condition scan", "error");
+        }
+    };
+
+    const handleStartEnrichmentAll = async () => {
+        try {
+            const result = await vptStartEnrichmentAll();
+            addLog(result.message, result.status === "ok" ? "info" : "error");
+            refreshAllStatus();
+        } catch (error) {
+            addLog("Failed to start enrichment", "error");
         }
     };
 
@@ -178,8 +204,10 @@ export default function VPTScannerControl() {
                             <div className="text-sm text-muted-foreground mt-1">Status</div>
                         </div>
                         <div className="text-center p-3 bg-muted rounded-lg">
-                            <div className="text-2xl font-bold">{scanStatus?.current_city || "-"}</div>
-                            <div className="text-sm text-muted-foreground mt-1">Current City</div>
+                            <div className="text-2xl font-bold">{scanStatus?.mode === "daily_intake" ? "DAILY" : (scanStatus?.current_city || "-")}</div>
+                            <div className="text-sm text-muted-foreground mt-1">
+                                {scanStatus?.mode === "daily_intake" ? "Current Mode" : "Current City"}
+                            </div>
                         </div>
                         <div className="text-center p-3 bg-muted rounded-lg">
                             <div className="text-2xl font-bold">{scanStatus?.total_bills?.toLocaleString() || 0}</div>
@@ -190,6 +218,23 @@ export default function VPTScannerControl() {
                             <div className="text-sm text-muted-foreground mt-1">VPT Properties</div>
                         </div>
                     </div>
+
+                    {scanStatus?.mode === "daily_intake" ? (
+                        <div className="grid grid-cols-3 gap-4">
+                            <div className="text-center p-3 bg-muted rounded-lg">
+                                <div className="text-xl font-bold">{scanStatus?.processed || 0}</div>
+                                <div className="text-sm text-muted-foreground mt-1">Processed</div>
+                            </div>
+                            <div className="text-center p-3 bg-muted rounded-lg">
+                                <div className="text-xl font-bold">{scanStatus?.promoted || 0}</div>
+                                <div className="text-sm text-muted-foreground mt-1">Promoted</div>
+                            </div>
+                            <div className="text-center p-3 bg-muted rounded-lg">
+                                <div className="text-xl font-bold">{scanStatus?.remaining || 0}</div>
+                                <div className="text-sm text-muted-foreground mt-1">Backlog Left</div>
+                            </div>
+                        </div>
+                    ) : null}
 
                     <div className="flex flex-wrap gap-3 items-center">
                         <Select value={selectedCity} onValueChange={setSelectedCity}>
@@ -208,6 +253,10 @@ export default function VPTScannerControl() {
                             <Play className="h-4 w-4 mr-1" />
                             Scan City
                         </Button>
+                        <Button onClick={handleStartDailyIntake} disabled={scanStatus?.is_running}>
+                            <Play className="h-4 w-4 mr-1" />
+                            Run Daily Intake
+                        </Button>
                         <Button onClick={handleStartContinuousScan} disabled={scanStatus?.is_running} variant="secondary">
                             <Play className="h-4 w-4 mr-1" />
                             Continuous Scan
@@ -225,7 +274,42 @@ export default function VPTScannerControl() {
             </Card>
 
             {/* Secondary Scanners */}
-            <div className="grid md:grid-cols-3 gap-4">
+            <div className="grid md:grid-cols-4 gap-4">
+                <Card>
+                    <CardHeader className="pb-2">
+                        <CardTitle className="text-base flex items-center gap-2">
+                            <Workflow className="h-4 w-4" />
+                            Autopilot Enrichment
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                        <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Status:</span>
+                            {enrichmentStatus?.is_running ? (
+                                <Badge className="bg-green-100 text-green-800">Running</Badge>
+                            ) : (
+                                <Badge variant="secondary">Idle</Badge>
+                            )}
+                        </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Pending:</span>
+                            <span>{enrichmentStatus?.pending_count || 0}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Queue:</span>
+                            <span>{enrichmentStatus?.queue_length || 0}</span>
+                        </div>
+                        <Button
+                            onClick={handleStartEnrichmentAll}
+                            className="w-full"
+                            size="sm"
+                            disabled={enrichmentStatus?.is_running}
+                        >
+                            Run Pending Enrichment
+                        </Button>
+                    </CardContent>
+                </Card>
+
                 {/* Research Scanner */}
                 <Card>
                     <CardHeader className="pb-2">

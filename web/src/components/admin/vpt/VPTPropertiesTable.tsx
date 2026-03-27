@@ -6,12 +6,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Heart, ExternalLink, Search, RefreshCw, FileText, MapPin, ChevronLeft, ChevronRight } from "lucide-react";
+import { Heart, ExternalLink, RefreshCw, MapPin, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   vptGetProperties,
+  vptStartEnrichment,
   vptToggleFavorite,
-  vptStartResearch,
-  vptStartConditionScan,
   type VPTProperty,
   type VPTMarker,
   type VPTFilters,
@@ -100,34 +99,18 @@ export default function VPTPropertiesTable() {
     }
   };
 
-  const handleStartResearch = async (apn: string) => {
+  const handleRefreshEnrichment = async (apn: string) => {
     try {
-      const result = await vptStartResearch([apn]);
+      const result = await vptStartEnrichment([apn]);
       toast({
-        title: "Research Updated",
+        title: "Property Update Started",
         description: result.message,
       });
       fetchProperties();
     } catch {
       toast({
         title: "Error",
-        description: "Failed to queue research",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleStartConditionScan = async (apn: string) => {
-    try {
-      const result = await vptStartConditionScan([apn]);
-      toast({
-        title: "Condition Scanner",
-        description: result.message,
-      });
-    } catch {
-      toast({
-        title: "Error",
-        description: "Failed to request condition scan",
+        description: "Failed to refresh property enrichment",
         variant: "destructive",
       });
     }
@@ -171,6 +154,13 @@ export default function VPTPropertiesTable() {
     return <Badge variant="secondary">-</Badge>;
   };
 
+  const formatAddedAt = (value: string) => {
+    if (!value) return "-";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleDateString();
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-3 items-center">
@@ -203,6 +193,31 @@ export default function VPTPropertiesTable() {
             <SelectItem value="all">All Power</SelectItem>
             <SelectItem value="on">ON</SelectItem>
             <SelectItem value="off">OFF</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={filters.sort || "location_of_property"}
+          onValueChange={(value) => updateFilter("sort", value)}
+        >
+          <SelectTrigger className="w-40">
+            <SelectValue placeholder="Sort By" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="location_of_property">Sort: Location</SelectItem>
+            <SelectItem value="city">Sort: City</SelectItem>
+            <SelectItem value="added_at">Sort: Date Added</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={filters.order || "asc"}
+          onValueChange={(value) => updateFilter("order", value)}
+        >
+          <SelectTrigger className="w-32">
+            <SelectValue placeholder="Order" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="asc">Ascending</SelectItem>
+            <SelectItem value="desc">Descending</SelectItem>
           </SelectContent>
         </Select>
         <div className="flex items-center gap-2">
@@ -246,6 +261,7 @@ export default function VPTPropertiesTable() {
               <TableHead>City</TableHead>
               <TableHead>Location</TableHead>
               <TableHead>APN</TableHead>
+              <TableHead>Date Added</TableHead>
               <TableHead>VPT</TableHead>
               <TableHead>Delinquent</TableHead>
               <TableHead>Power</TableHead>
@@ -258,7 +274,7 @@ export default function VPTPropertiesTable() {
             {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 10 }).map((__, j) => (
+                  {Array.from({ length: 11 }).map((__, j) => (
                     <TableCell key={j}>
                       <Skeleton className="h-4 w-full" />
                     </TableCell>
@@ -267,7 +283,7 @@ export default function VPTPropertiesTable() {
               ))
             ) : properties.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                   No properties found
                 </TableCell>
               </TableRow>
@@ -295,6 +311,7 @@ export default function VPTPropertiesTable() {
                     {property.location_of_property}
                   </TableCell>
                   <TableCell className="text-xs font-mono">{property.apn}</TableCell>
+                  <TableCell className="text-sm">{formatAddedAt(property.added_at)}</TableCell>
                   <TableCell>
                     {property.has_vpt === "Yes" ? (
                       <Badge className="bg-red-100 text-red-800">Yes</Badge>
@@ -351,21 +368,11 @@ export default function VPTPropertiesTable() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleStartResearch(property.apn)}
-                        title="Queue Research"
+                        onClick={() => handleRefreshEnrichment(property.apn)}
+                        title="Refresh Property Data"
                       >
-                        <Search className="h-4 w-4" />
+                        <RefreshCw className="h-4 w-4" />
                       </Button>
-                      {property.condition_score === null && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleStartConditionScan(property.apn)}
-                          title="Request Condition Scan"
-                        >
-                          <FileText className="h-4 w-4" />
-                        </Button>
-                      )}
                     </div>
                   </TableCell>
                 </TableRow>

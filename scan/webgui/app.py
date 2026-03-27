@@ -1237,7 +1237,11 @@ def api_scan_start():
         
         success = run_all.start_scan(city=city, continuous=continuous)
         if success:
-            return jsonify({"status": "ok", "message": f"Scan started for {city or 'all cities'}"})
+            if not city and not continuous:
+                message = "Daily intake started"
+            else:
+                message = f"Scan started for {city or 'all cities'}"
+            return jsonify({"status": "ok", "message": message})
         else:
             return jsonify({"status": "error", "message": "Failed to start scan"})
     except ModuleNotFoundError:
@@ -1371,6 +1375,49 @@ def api_research_start_all():
             })
         else:
             return jsonify({"status": "error", "message": "Failed to start research"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+
+
+@app.route("/api/enrichment/status")
+@login_required
+def api_enrichment_status():
+    try:
+        import scanner.enrichment_runner as enrichment_runner
+
+        status = enrichment_runner.get_enrichment_state()
+        status["scanner_available"] = True
+        return jsonify(status)
+    except ModuleNotFoundError:
+        return jsonify({"is_running": False, "scanner_available": False})
+    except Exception as e:
+        return jsonify({"error": str(e), "is_running": False, "scanner_available": False})
+
+
+@app.route("/api/enrichment/start", methods=["POST"])
+@login_required
+def api_enrichment_start():
+    try:
+        import scanner.enrichment_runner as enrichment_runner
+
+        data = request.get_json() or {}
+        apns = data.get("apns", [])
+        if not apns:
+            return jsonify({"status": "error", "message": "No APNs provided"})
+        enrichment_runner.start_enrichment(apns, sweep_pending=False)
+        return jsonify({"status": "ok", "message": f"Enrichment started for {len(apns)} properties"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+
+
+@app.route("/api/enrichment/start-all", methods=["POST"])
+@login_required
+def api_enrichment_start_all():
+    try:
+        import scanner.enrichment_runner as enrichment_runner
+
+        enrichment_runner.start_enrichment([], sweep_pending=True)
+        return jsonify({"status": "ok", "message": "Enrichment started for pending properties"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 

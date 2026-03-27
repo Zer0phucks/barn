@@ -331,23 +331,17 @@ def get_condition_state() -> dict[str, Any]:
 
 def get_condition_score(apn: str) -> dict[str, Any] | None:
     """Get condition data for a property."""
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT condition_score, condition_notes, condition_updated_at, streetview_image_path
-        FROM bills WHERE apn = ?
-    """, (apn,))
-    row = cur.fetchone()
-    conn.close()
-    
+    import db
+
+    row = db.get_bill(apn)
     if not row:
         return None
     
     return {
-        "score": row["condition_score"],
-        "notes": row["condition_notes"],
-        "updated_at": row["condition_updated_at"],
-        "image_path": row["streetview_image_path"],
+        "score": row.get("condition_score"),
+        "notes": row.get("condition_notes"),
+        "updated_at": row.get("condition_updated_at"),
+        "image_path": row.get("streetview_image_path"),
     }
 
 

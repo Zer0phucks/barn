@@ -23,7 +23,8 @@ from urllib.error import URLError, HTTPError
 PdfReader = None
 
 BASE_DIR = Path(__file__).resolve().parent
-INPUT_CSV = BASE_DIR / "Parcels_5567367248157875843.csv"
+INPUT_CSV = BASE_DIR / "parcels.csv"
+LEGACY_INPUT_CSV = BASE_DIR / "Parcels_5567367248157875843.csv"
 CACHE_JSONL = BASE_DIR / "measw_cache.jsonl"
 
 BASE_URL = "https://propertytax.alamedacountyca.gov"
@@ -61,6 +62,12 @@ MAX_WORKERS = int(os.getenv("VPT_MAX_WORKERS", "8"))
 _slow_mode = False
 _slow_mode_multiplier = 1.0
 CHROME_PATH = "/usr/bin/google-chrome"
+
+
+def get_input_csv_path() -> Path:
+    if INPUT_CSV.exists():
+        return INPUT_CSV
+    return LEGACY_INPUT_CSV
 
 
 def fetch_text(url: str) -> str:
@@ -358,7 +365,13 @@ def init_db(conn=None) -> None:
     pass
 
 
-def upsert_db(apn: str, bill_url: str, bill_html: str, row_json: str | None) -> None:
+def upsert_db(
+    apn: str,
+    bill_url: str,
+    bill_html: str,
+    row_json: str | None,
+    power_status: str | None = None,
+) -> None:
     import db
     city = None
     if row_json:
@@ -382,6 +395,7 @@ def upsert_db(apn: str, bill_url: str, bill_html: str, row_json: str | None) -> 
         delinquent=int(fields.get("delinquent") or 0),
         raw_text=raw_text,
         bill_url=bill_url,
+        power_status=power_status,
         has_vpt=int(fields.get("has_vpt") or 0),
         vpt_marker=fields.get("vpt_marker"),
         city=city,
@@ -390,7 +404,7 @@ def upsert_db(apn: str, bill_url: str, bill_html: str, row_json: str | None) -> 
 
 
 def find_address_for_apn(apn: str) -> str | None:
-    with INPUT_CSV.open(newline="", encoding="utf-8", errors="replace") as f:
+    with get_input_csv_path().open(newline="", encoding="utf-8", errors="replace") as f:
         reader = csv.DictReader(f)
         for row in reader:
             if row.get("APN", "").strip() == apn:
@@ -406,7 +420,7 @@ def run_single_apn(apn: str) -> None:
         return
     bill_html = fetch_text(bill_url)
     row_json = None
-    with INPUT_CSV.open(newline="", encoding="utf-8", errors="replace") as f:
+    with get_input_csv_path().open(newline="", encoding="utf-8", errors="replace") as f:
         reader = csv.DictReader(f)
         for row in reader:
             if row.get("APN", "").strip() == apn:
@@ -421,7 +435,7 @@ def backfill_pdfs() -> None:
     apn_order: list[str] = []
     apn_to_rowjson: dict[str, str] = {}
 
-    with INPUT_CSV.open(newline="", encoding="utf-8", errors="replace") as f:
+    with get_input_csv_path().open(newline="", encoding="utf-8", errors="replace") as f:
         reader = csv.DictReader(f)
         for row in reader:
             if row.get("CITY", row.get("SitusCity", "")).strip().upper() != "OAKLAND":
@@ -478,7 +492,7 @@ def backfill_pdfs() -> None:
 
 def retry_missing_pdfs() -> None:
     apn_to_rowjson: dict[str, str] = {}
-    with INPUT_CSV.open(newline="", encoding="utf-8", errors="replace") as f:
+    with get_input_csv_path().open(newline="", encoding="utf-8", errors="replace") as f:
         reader = csv.DictReader(f)
         for row in reader:
             apn = row.get("APN", "").strip()
@@ -536,7 +550,7 @@ def main(city: str | None = None) -> None:
     apn_order: list[str] = []
     apn_to_rowjson: dict[str, str] = {}
 
-    with INPUT_CSV.open(newline="", encoding="utf-8", errors="replace") as f:
+    with get_input_csv_path().open(newline="", encoding="utf-8", errors="replace") as f:
         reader = csv.DictReader(f)
         for row in reader:
             row_city = row.get("CITY", row.get("SitusCity", "")).strip().upper()
@@ -609,7 +623,7 @@ def fix_missing_fields() -> None:
     """Re-fetch bill HTML for DB entries with missing location_of_property."""
     import db
     apn_to_rowjson: dict[str, str] = {}
-    with INPUT_CSV.open(newline="", encoding="utf-8", errors="replace") as f:
+    with get_input_csv_path().open(newline="", encoding="utf-8", errors="replace") as f:
         reader = csv.DictReader(f)
         for row in reader:
             apn = row.get("APN", "").strip()

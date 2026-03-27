@@ -1,0 +1,13 @@
+[Unit]
+Description=BARN daily parcel intake and enrichment runner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/noob/barn/scan
+EnvironmentFile=-/home/noob/barn/scan/.env
+ExecStart=/home/noob/barn/scan/.venv/bin/python /home/noob/barn/scan/intake_autopilot.py --max-concurrency 4
+
+[Install]
+WantedBy=multi-user.target

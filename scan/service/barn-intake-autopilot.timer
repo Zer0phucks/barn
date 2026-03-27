@@ -1,0 +1,10 @@
+[Unit]
+Description=Run BARN daily parcel intake and enrichment
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+Unit=barn-intake-autopilot.service
+
+[Install]
+WantedBy=timers.target

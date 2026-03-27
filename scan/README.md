@@ -31,7 +31,7 @@ vpt/
 │       └── login.html      # Authentication page
 ├── requirements.txt        # Python dependencies
 ├── install.sh              # Installation script
-├── Parcels_*.csv           # Property parcel data (local only, not deployed)
+├── parcels.csv             # Property parcel backlog (local only, not deployed)
 ├── .env                    # SUPABASE_URL, SUPABASE_ANON_KEY (required)
 ├── measw_cache.jsonl       # Scan cache (local only, not deployed)
 └── .env                    # Environment variables (not in repo)
@@ -69,7 +69,7 @@ You need a Parcels CSV file from Alameda County with the following columns:
 - `SitusAddress` - Property address
 - `CENTROID_X`, `CENTROID_Y` - Coordinates (Web Mercator)
 
-Place it as `Parcels_5567367248157875843.csv` in the project root.
+Place it as `parcels.csv` in the project root.
 
 ## Usage
 
@@ -80,6 +80,9 @@ source .venv/bin/activate
 
 # Scan a specific city
 python run_all.py --city=OAKLAND
+
+# Run the daily backlog intake + enrichment pass
+python intake_autopilot.py
 
 # Continuous scanning (all cities in loop)
 python run_all.py --continuous

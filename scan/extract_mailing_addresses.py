@@ -4,10 +4,17 @@ import csv
 
 from pathlib import Path
 
-INPUT_CSV = Path(__file__).resolve().parent / "Parcels_5567367248157875843.csv"
+INPUT_CSV = Path(__file__).resolve().parent / "parcels.csv"
+LEGACY_INPUT_CSV = Path(__file__).resolve().parent / "Parcels_5567367248157875843.csv"
 OUTPUT_TXT = Path(__file__).resolve().parent / "mailing_addresses.txt"
 
-with open(INPUT_CSV, newline="", encoding="utf-8", errors="replace") as f_in:
+
+def get_input_csv_path() -> Path:
+    if INPUT_CSV.exists():
+        return INPUT_CSV
+    return LEGACY_INPUT_CSV
+
+with open(get_input_csv_path(), newline="", encoding="utf-8", errors="replace") as f_in:
     reader = csv.DictReader(f_in)
     if "MailingAddress" not in reader.fieldnames:
         raise SystemExit("CSV has no 'MailingAddress' column")

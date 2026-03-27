@@ -23,12 +23,13 @@ load_dotenv()
 
 from webgui import app as webapp
 import find_meas_w_addresses as scanner
+import intake_autopilot
 import pge_scanner
 import db
 
 BASE_DIR = Path(__file__).resolve().parent
 # Main parcels CSV from Alameda County (see README)
-CSV_PATH = BASE_DIR / "Parcels_5567367248157875843.csv"
+CSV_PATH = intake_autopilot.canonical_parcels_path()
 
 # Cities to scan (in order of priority)
 SCAN_CITIES = [
@@ -60,7 +61,7 @@ scan_state = {
 
 def load_apn_rowjson() -> dict[str, str]:
     apn_to_rowjson: dict[str, str] = {}
-    with CSV_PATH.open(newline="", encoding="utf-8", errors="replace") as f:
+    with intake_autopilot.canonical_parcels_path().open(newline="", encoding="utf-8", errors="replace") as f:
         reader = csv.DictReader(f)
         for row in reader:
             apn = (row.get("APN") or "").strip()
@@ -100,7 +101,7 @@ def ensure_cache_in_db() -> None:
 def get_cities_from_csv() -> list[str]:
     """Get list of unique cities from CSV that have parcels."""
     cities = set()
-    with CSV_PATH.open(newline="", encoding="utf-8", errors="replace") as f:
+    with intake_autopilot.canonical_parcels_path().open(newline="", encoding="utf-8", errors="replace") as f:
         reader = csv.DictReader(f)
         for row in reader:
             city = (row.get("CITY") or row.get("SitusCity") or "").strip().upper()
@@ -180,12 +181,27 @@ def run_pge_scan() -> None:
 
 def get_scan_state() -> dict:
     """Return current scan state for API."""
+    if intake_autopilot.intake_state["is_running"]:
+        intake = intake_autopilot.get_intake_state()
+        return {
+            "current_city": None,
+            "cities_completed": [],
+            "is_running": True,
+            "continuous_mode": False,
+            "available_cities": get_cities_from_csv(),
+            "mode": intake.get("mode"),
+            "processed": intake.get("processed", 0),
+            "promoted": intake.get("promoted", 0),
+            "remaining": intake.get("remaining", 0),
+            "current_apn": intake.get("current_apn"),
+        }
     return {
         "current_city": scan_state["current_city"],
         "cities_completed": scan_state["cities_completed"],
         "is_running": scan_state["is_running"],
         "continuous_mode": scan_state["continuous_mode"],
         "available_cities": get_cities_from_csv(),
+        "mode": "legacy_scan" if scan_state["is_running"] else None,
     }
 
 
@@ -201,7 +217,7 @@ def start_scan(city: str | None = None, continuous: bool = False) -> bool:
     elif city:
         thread = threading.Thread(target=run_single_city_scan, args=(city,), daemon=True)
     else:
-        return False
+        return intake_autopilot.start_daily_intake()
     
     thread.start()
     return True

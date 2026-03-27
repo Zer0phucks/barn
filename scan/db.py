@@ -391,6 +391,7 @@ _CONTACT_ENRICH_COLUMNS = (
 )
 
 _RPC_SORT_COLUMNS = {
+    "added_at",
     "location_of_property",
     "apn",
     "parcel_number",
@@ -615,7 +616,6 @@ def get_bills_with_parcels_filtered(
         "p_limit": limit,
         "p_offset": offset,
         "p_research": _normalize_research_filter(research_filter) or None,
-        "p_owner_name": (owner_name_filter or "").strip() or None,
     }
 
     r = get_client().rpc("get_bills_filtered", payload).execute()
@@ -643,7 +643,6 @@ def get_bills_for_map(
         "p_city": (city_filter or "").strip().upper() or None,
         "p_vpt": 1 if (vpt_filter or "").strip() == "1" else None,
         "p_delinquent": 1 if (delinquent_filter or "").strip() == "1" else None,
-        "p_owner_name": (owner_name_filter or "").strip() or None,
     }
     r = get_client().rpc("get_bills_for_map", payload).execute()
     if not r.data:

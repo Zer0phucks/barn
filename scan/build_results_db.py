@@ -17,8 +17,15 @@ from pypdf import PdfReader
 import db
 
 BASE_DIR = Path(__file__).resolve().parent
-CSV_PATH = BASE_DIR / "Parcels_5567367248157875843.csv"
+CSV_PATH = BASE_DIR / "parcels.csv"
+LEGACY_CSV_PATH = BASE_DIR / "Parcels_5567367248157875843.csv"
 BANDOS_DIR = BASE_DIR / "bandos"
+
+
+def get_csv_path() -> Path:
+    if CSV_PATH.exists():
+        return CSV_PATH
+    return LEGACY_CSV_PATH
 
 
 def extract_bill_fields(text: str) -> dict[str, str]:
@@ -75,7 +82,7 @@ def read_pdf_text(pdf_path: Path) -> str:
 def build_db() -> None:
     # Load parcels CSV into memory
     apn_to_rowjson: dict[str, str] = {}
-    with CSV_PATH.open(newline="", encoding="utf-8", errors="replace") as f:
+    with get_csv_path().open(newline="", encoding="utf-8", errors="replace") as f:
         reader = csv.DictReader(f)
         for row in reader:
             apn = (row.get("APN") or "").strip()

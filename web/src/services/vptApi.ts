@@ -11,6 +11,7 @@ export interface VPTProperty {
   pdf_file: string;
   bill_url: string;
   apn: string;
+  added_at: string;
   parcel_number: string;
   tracer_number: string;
   location_of_property: string;
@@ -93,11 +94,16 @@ export interface VPTScanStatus {
   is_running: boolean;
   continuous_mode: boolean;
   current_city: string | null;
+  current_apn?: string | null;
   available_cities: string[];
   cities_completed: string[];
   total_bills: number;
   vpt_count: number;
   city_counts: Record<string, number>;
+  mode?: string | null;
+  processed?: number;
+  promoted?: number;
+  remaining?: number;
 }
 
 export interface VPTResearchStatus {
@@ -128,8 +134,18 @@ export interface VPTPgeStatus {
   total_unchecked: number;
 }
 
+export interface VPTEnrichmentStatus {
+  is_running: boolean;
+  current_apn: string | null;
+  queue_length: number;
+  completed: number;
+  failed: number;
+  pending_count: number;
+}
+
 type RpcBillRow = {
   apn: string;
+  added_at?: string | null;
   pdf_file: string | null;
   bill_url: string | null;
   parcel_number: string | null;
@@ -225,7 +241,7 @@ const buildStreetviewImageUrl = (lat: number, lng: number, location: string): st
   return "";
 };
 
-const normalizeRow = (row: RpcBillRow, favoritesSet: Set<string>): VPTProperty => {
+export const mapRpcRowToProperty = (row: RpcBillRow, favoritesSet: Set<string>): VPTProperty => {
   const parcel = parseRowJson(row.row_json);
   const { lat, lng } = extractCoordinates(parcel);
   const location = toString(row.location_of_property);
@@ -237,6 +253,7 @@ const normalizeRow = (row: RpcBillRow, favoritesSet: Set<string>): VPTProperty =
     pdf_file: toString(row.pdf_file),
     bill_url: toString(row.bill_url),
     apn: toString(row.apn),
+    added_at: toString(row.added_at),
     parcel_number: toString(row.parcel_number),
     tracer_number: toString(row.tracer_number),
     location_of_property: location,
@@ -380,6 +397,9 @@ const workerRoutes: Record<string, WorkerRoute> = {
   "condition.status": { method: "GET", path: "/api/condition/status" },
   "condition.start": { method: "POST", path: "/api/condition/start" },
   "condition.start_all": { method: "POST", path: "/api/condition/start-all" },
+  "enrichment.status": { method: "GET", path: "/api/enrichment/status" },
+  "enrichment.start": { method: "POST", path: "/api/enrichment/start" },
+  "enrichment.start_all": { method: "POST", path: "/api/enrichment/start-all" },
   "pge.status": { method: "GET", path: "/api/pge/status" },
   "pge.start": { method: "POST", path: "/api/pge/start" },
   "pge.start_all": { method: "POST", path: "/api/pge/start-all" },
@@ -552,7 +572,7 @@ export async function vptGetProperties(filters: VPTFilters = {}): Promise<VPTPro
   }
 
   const { rows, total } = parseFilteredPayload(finalResult.data);
-  const normalizedRows = rows.map((row) => normalizeRow(row, favoritesSet));
+  const normalizedRows = rows.map((row) => mapRpcRowToProperty(row, favoritesSet));
 
   return {
     rows: normalizedRows,
@@ -584,7 +604,7 @@ export async function vptGetMarkers(filters: VPTFilters = {}): Promise<VPTMarker
   }
 
   const rows = Array.isArray(rpcResult.data) ? (rpcResult.data as RpcBillRow[]) : [];
-  return rows.map((row) => toMarker(normalizeRow(row, favoritesSet)));
+  return rows.map((row) => toMarker(mapRpcRowToProperty(row, favoritesSet)));
 }
 
 // Favorites
@@ -653,11 +673,16 @@ export async function vptGetScanStatus(): Promise<VPTScanStatus> {
     is_running: asBoolean(workerStatus.is_running) ?? false,
     continuous_mode: asBoolean(workerStatus.continuous_mode) ?? false,
     current_city: asString(workerStatus.current_city),
+    current_apn: asString(workerStatus.current_apn),
     available_cities: workerAvailableCities.length ? workerAvailableCities : availableCities,
     cities_completed: workerCompletedCities.length ? workerCompletedCities : availableCities,
     total_bills: totalResult.count || 0,
     vpt_count: vptResult.count || 0,
     city_counts: cityCounts,
+    mode: asString(workerStatus.mode),
+    processed: asNumber(workerStatus.processed) ?? undefined,
+    promoted: asNumber(workerStatus.promoted) ?? undefined,
+    remaining: asNumber(workerStatus.remaining) ?? undefined,
   };
 }
 
@@ -669,9 +694,12 @@ export async function vptStartScan(
     city: city || null,
     continuous,
   });
+  const fallbackMessage = !city && !continuous
+    ? "Daily intake started."
+    : `Scan trigger sent for ${city || "all cities"} (${continuous ? "continuous" : "single pass"}).`;
   return toActionResult(
     result,
-    `Scan trigger sent for ${city || "all cities"} (${continuous ? "continuous" : "single pass"}).`
+    fallbackMessage
   );
 }
 
@@ -840,6 +868,40 @@ export async function vptStartConditionScanAll(): Promise<{ status: string; mess
   return toActionResult(
     await invokeWorker<Record<string, unknown>>("condition.start_all"),
     "Condition scan started for unscanned properties."
+  );
+}
+
+export async function vptGetEnrichmentStatus(): Promise<VPTEnrichmentStatus> {
+  const workerStatus = asRecord(
+    await invokeWorker<Record<string, unknown>>("enrichment.status", undefined, true)
+  );
+
+  return {
+    is_running: asBoolean(workerStatus.is_running) ?? false,
+    current_apn: asString(workerStatus.current_apn),
+    queue_length: asNumber(workerStatus.queue_length) ?? 0,
+    completed: asNumber(workerStatus.completed) ?? 0,
+    failed: asNumber(workerStatus.failed) ?? 0,
+    pending_count: asNumber(workerStatus.pending_count) ?? 0,
+  };
+}
+
+export async function vptStartEnrichment(
+  apns: string[]
+): Promise<{ status: string; message: string }> {
+  if (!apns.length) {
+    return { status: "ok", message: "No APNs provided." };
+  }
+  return toActionResult(
+    await invokeWorker<Record<string, unknown>>("enrichment.start", { apns }),
+    `Enrichment started for ${apns.length} properties.`
+  );
+}
+
+export async function vptStartEnrichmentAll(): Promise<{ status: string; message: string }> {
+  return toActionResult(
+    await invokeWorker<Record<string, unknown>>("enrichment.start_all"),
+    "Enrichment started for pending properties."
   );
 }
 

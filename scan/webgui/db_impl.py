@@ -572,7 +572,6 @@ def get_bills_with_parcels_filtered(
         "p_delinquent": 1 if (delinquent_filter or "").strip() == "1" else None,
         "p_condition": (condition_filter or "").strip() or None,
         "p_outofstate": 1 if (outofstate_filter or "").strip() == "1" else None,
-        "p_owner_name": (owner_name_filter or "").strip() or None,
         "p_research": normalized_research or None,
         "p_sort": ((sort or "location_of_property").strip() if (sort or "location_of_property").strip() in _RPC_SORT_COLUMNS else "location_of_property"),
         "p_order": (order or "asc").strip(),

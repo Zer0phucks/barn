@@ -17,6 +17,7 @@ export type Database = {
       bills: {
         Row: {
           apn: string
+          added_at: string | null
           bill_url: string | null
           city: string | null
           condition_notes: string | null
@@ -52,6 +53,7 @@ export type Database = {
         }
         Insert: {
           apn: string
+          added_at?: string | null
           bill_url?: string | null
           city?: string | null
           condition_notes?: string | null
@@ -87,6 +89,7 @@ export type Database = {
         }
         Update: {
           apn?: string
+          added_at?: string | null
           bill_url?: string | null
           city?: string | null
           condition_notes?: string | null
