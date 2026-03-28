@@ -899,19 +899,19 @@ def get_list_properties(list_id: int) -> list[dict]:
         return []
     bills = get_client().table("bills").select("apn, location_of_property, city, has_vpt, condition_score").in_("apn", apns).execute()
     bill_map = {b["apn"]: b for b in (bills.data or [])}
+    parcels = get_client().table("parcels").select("APN, row_json").in_("APN", apns).execute()
+    parcel_map = {p["APN"]: p.get("row_json") for p in (parcels.data or [])}
     out = []
     for row in lp.data:
         apn = row["apn"]
         b = bill_map.get(apn, {})
-        parcel_r = get_client().table("parcels").select("row_json").eq("APN", apn).limit(1).execute()
-        row_json = parcel_r.data[0].get("row_json") if (parcel_r.data and len(parcel_r.data) > 0) else None
         out.append({
             "apn": apn,
             "location_of_property": b.get("location_of_property"),
             "city": b.get("city"),
             "has_vpt": b.get("has_vpt"),
             "condition_score": b.get("condition_score"),
-            "row_json": row_json,
+            "row_json": parcel_map.get(apn),
             "sort_order": row.get("sort_order"),
         })
     return out

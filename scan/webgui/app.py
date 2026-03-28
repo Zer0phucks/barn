@@ -2227,7 +2227,13 @@ def api_scout_next():
     
     # Unscouted APNs
     scout_apns = {r["apn"] for r in db.get_scout_results(None)}
-    rows = db.get_bills_for_map(q=search_q, city_filter=city, vpt_filter="1" if vpt_only else "")
+    rows, _ = db.get_bills_with_parcels_filtered(
+        q=search_q,
+        city_filter=city,
+        vpt_filter="1" if vpt_only else "",
+        page=1,
+        page_size=10000,
+    )
     rows = [r for r in rows if r.get("apn") not in scout_apns and (r.get("location_of_property") or "").strip()]
     if condition_min is not None:
         try:

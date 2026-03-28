@@ -4,75 +4,97 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BARN (Bay Area Renovating Neighbors) is a monorepo with two deployed apps:
-- **`scan/`** — Flask app at `app.barnhousing.org`: VPT Scanner for identifying vacant properties in Alameda County via tax portal scraping, PG&E power checks, and AI-powered ownership research.
-- **`web/`** — React SPA at `barnhousing.org`: Public-facing site for property reporting, volunteer signup, housing applications, and admin dashboard.
+**BARN (Bay Area Renovating Neighbors)** identifies and tracks vacant properties in Alameda County, CA. It combines a tax-portal scraper, AI-powered research, a Flask admin UI, a React public site, and a Kotlin Android scout app — all backed by Supabase (PostgreSQL).
 
-See `scan/CLAUDE.md` for detailed scan-specific guidance.
+---
 
 ## Commands
 
-### Web (from `web/`)
+### Web Frontend (`web/`)
 ```bash
+cd web
 npm install
-npm run dev          # Vite dev server on :8080
-npm run build        # Production build to dist/
+npm run dev          # Dev server at http://localhost:8080
+npm run build        # Production build
 npm run lint         # ESLint
-npm run test         # Vitest (single run)
+npm run test         # Vitest (run once)
 npm run test:watch   # Vitest watch mode
 ```
 
-### Scan (from `scan/`)
+### Python Scanner (`scan/`)
 ```bash
-./install.sh                          # First-time setup (venv, deps, Playwright)
+cd scan
+./install.sh                              # Full setup: venv + pip + playwright chromium
 source .venv/bin/activate
-python run_all.py --city=OAKLAND      # Scan + web UI on :5000
-python run_all.py --continuous        # All cities loop + web UI
-python webgui/app.py                  # Web UI only (no scanning)
+
+python run_all.py --city=OAKLAND          # Scan one city + start Flask UI on :5000
+python run_all.py --continuous            # Continuous multi-city loop
+python webgui/app.py                      # Flask UI only (no scanning)
+python intake_autopilot.py               # Daily backlog intake + enrichment pipeline
+
+python -m unittest discover -s tests     # Run all unit tests
+python -m unittest tests.test_foo        # Run a single test module
 ```
 
-### Deploy (on VM)
+### Android (`android/`)
 ```bash
-cd /home/nsnfrd768/barn/barn
-./deploy.sh    # git pull + npm build + systemd restart
+cd android
+./gradlew test           # JVM unit tests
+./gradlew assembleDebug  # Build debug APK
 ```
+
+### Deployment
+```bash
+./deploy.sh              # Full redeploy (git pull → pip → npm build → systemd restart)
+```
+
+---
 
 ## Architecture
 
-### Two Separate Apps, One Database
+The repo is a monorepo with four components sharing a Supabase backend:
 
-Both apps share a Supabase backend. The scan app writes property data; the React admin dashboard reads it. They don't share code.
+```
+barnhousing.org (web/)          → Vercel, React SPA, public landing page
+app.barnhousing.org (scan/webgui/) → Vercel, Flask admin UI (45+ routes)
+Local VM (scan/)                → Python scanners running as systemd services
+Android (android/)              → Scout app for on-the-ground field work
+```
 
-### Scan App: Dual-Mode Design
-- **Local/VM mode** (`run_all.py`): Multi-threaded orchestrator runs VPT scraping + PGE Playwright checks + Flask web UI together. Caches to `measw_cache.jsonl`, syncs to Supabase.
-- **Vercel/cloud mode** (`app.py` → `webgui/app.py`): Web UI only, no scanning. The root `app.py` explicitly registers `db.py` before `webgui/` to avoid module shadowing.
+**Data pipeline:**
+1. `find_meas_w_addresses.py` scrapes the Alameda County tax portal for VPT/delinquent markers → upserts to `bills` table
+2. `pge_scanner.py` uses Playwright to check PG&E power status per address
+3. `gemini_research_scanner.py` / `enrichment_runner.py` run parallel AI research (Gemini + Kimi K2.5 via OpenRouter) to extract ownership, contacts, condition scores
+4. `intake_autopilot.py` runs daily to ingest new parcels and trigger enrichment
+5. `webgui/app.py` (Flask) reads Supabase to serve the admin UI
+6. Android app reads the same Supabase data for field scouts
 
-### Scan App: Enrichment Pipeline
-New properties flow: `intake_autopilot.py` → `enrichment_runner.py` → parallel research scanners (`gemini_research_scanner.py`, `cyber_research_agent.py`, `contact_scanner.py`, `condition_scanner.py`) → Supabase `bills` table.
+**Key files:**
+- `scan/db.py` — all Supabase operations (lazy singleton client, `_with_retry()` pattern)
+- `scan/webgui/app.py` — Flask app with all admin routes
+- `scan/run_all.py` — orchestrates scanning threads + Flask startup
+- `web/src/integrations/supabase/types.ts` — **auto-generated from Supabase schema, do not hand-edit**
 
-### React Admin: VPT Scanner Control
-`web/src/components/admin/vpt/` contains the admin UI for scanner state. `web/src/services/vptApi.ts` talks to the Supabase `vpt-scanner-control` edge function, which forwards to the scan VM. `web/src/integrations/supabase/types.ts` is auto-generated — don't edit manually.
+**Primary DB tables:** `bills` (PK: `apn`), `parcels` (PK: `APN`), `cbc_image_extractions`
 
-### Key Supabase Tables
-- **`bills`** (PK: `apn`): Core property records. Fields: `has_vpt`, `vpt_marker`, `delinquent`, `power_status`, `city`, research status, contact info, condition scores.
-- **`parcels`** (PK: `APN`): Raw Alameda County parcel data stored as `row_json`.
-- **`cbc_image_extractions`**: Gemini-extracted data from background check screenshots.
-
-### Scan Conventions
-- All Supabase ops go through `db.py` `_with_retry()` (exponential backoff).
-- Web scraping uses `curl_cffi` for TLS impersonation; Playwright as fallback.
-- `scanner/` package mirrors root-level modules for import flexibility.
-- Frontend in `webgui/templates/` is vanilla JS + Leaflet.js — no build step.
+---
 
 ## Environment Variables
 
-**Scan** (`.env` in `scan/`):
-- Required: `SUPABASE_URL`, `SUPABASE_ANON_KEY` or `SUPABASE_SERVICE_KEY`
-- Optional: `GOOGLE_API_KEY` (Gemini), `OPENROUTER_API_KEY`, `SCRAPER_API_KEY`, `SCOUT_API_KEY`
-- Tuning: `VPT_MAX_WORKERS` (default 8), `VPT_REQUEST_DELAY_SEC` (default 0.05), `VPT_ENABLE_PGE`
+**`scan/` requires:**
+- `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` (or `SUPABASE_ANON_KEY`)
+- Optional: `GOOGLE_API_KEY` (Gemini), `OPENROUTER_API_KEY` (Kimi), `SCRAPER_API_KEY`, `SCOUT_API_KEY`
+- Tuning: `VPT_MAX_WORKERS` (default 8), `VPT_REQUEST_DELAY_SEC` (default 0.05), `SUPABASE_RETRY_ATTEMPTS` (default 3)
 
-**Web** (`.env` in `web/`): Supabase URL and anon key for the React client.
+**`web/` requires:**
+- `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
 
-## Systemd
+---
 
-`barn-scan.service` WorkingDirectory and ExecStart point to `/home/nsnfrd768/barn/barn/scan/`. The intake autopilot runs on a timer via `barn-intake-autopilot.service` / `.timer`.
+## Key Conventions
+
+- **Web scraping**: Use `curl_cffi` for TLS impersonation (Cloudflare bypass); fall back to Playwright only when necessary.
+- **Supabase access**: Always use `db.get_client()` (lazy singleton). Wrap DB calls with `_with_retry()` for exponential backoff.
+- **Vercel vs VM**: The Flask app runs on Vercel (web UI only); all scanning scripts run on the GCloud VM. Never expect scanning to work in Vercel's environment.
+- **Scanner parallelism**: `enrichment_runner.py` runs multiple AI scanners in parallel threads; mind rate limits and `VPT_MAX_WORKERS`.
+- **Android proxy**: The scout app calls Supabase through a proxy Edge Function, not directly.
