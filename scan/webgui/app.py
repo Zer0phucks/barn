@@ -1332,8 +1332,8 @@ def api_worker_status():
             "active_job": active_job,
             "last_interrupted_job": last_interrupted_job,
         })
-    except Exception:
-        return jsonify({"worker": None, "active_job": None, "last_interrupted_job": None})
+    except Exception as e:
+        return jsonify({"worker": None, "active_job": None, "last_interrupted_job": None, "error": str(e)})
 
 
 @app.route("/api/scan/resume", methods=["POST"])
@@ -1353,9 +1353,11 @@ def api_scan_resume():
         try:
             import scanner.run_all as run_all
             if checkpoint_city:
-                run_all.start_scan(city=checkpoint_city)
+                success = run_all.start_scan(city=checkpoint_city)
             else:
-                run_all.start_scan()
+                success = run_all.start_scan()
+            if not success:
+                return jsonify({"status": "error", "message": "Scan already running or failed to start"})
         except ModuleNotFoundError:
             return jsonify({"status": "error", "message": "Scanner not available in cloud deployment"})
 
@@ -1375,6 +1377,7 @@ def api_scan_resume():
 def api_discoveries():
     """List unacknowledged new property discoveries."""
     try:
+        limit = min(int(request.args.get("limit", 100)), 200)
         client = db.get_client()
         result = (
             client.table("bills")
@@ -1382,6 +1385,7 @@ def api_discoveries():
             .is_("new_reviewed_at", "null")
             .not_.is_("first_seen_at", "null")
             .order("first_seen_at", desc=True)
+            .limit(limit)
             .execute()
         )
         rows = result.data or []
@@ -1406,9 +1410,16 @@ def api_discoveries_ack():
         if not apns:
             return jsonify({"status": "error", "message": "No APNs provided"})
 
+        if not isinstance(apns, list):
+            return jsonify({"status": "error", "message": "apns must be a list"}), 400
+
+        cleaned = [a for a in (_clean_apn(str(x)) for x in apns) if a]
+        if not cleaned:
+            return jsonify({"status": "error", "message": "No valid APNs provided"}), 400
+
         client = db.get_client()
-        client.table("bills").update({"new_reviewed_at": "now()"}).in_("apn", apns).execute()
-        return jsonify({"status": "ok", "updated": len(apns)})
+        client.table("bills").update({"new_reviewed_at": "now()"}).in_("apn", cleaned).execute()
+        return jsonify({"status": "ok", "updated": len(cleaned)})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 
