@@ -49,6 +49,10 @@ const workerRoutes: Record<string, WorkerRoute> = {
   "pge.start": { method: "POST", path: "/api/pge/start" },
   "pge.start_all": { method: "POST", path: "/api/pge/start-all" },
   "pge.stop": { method: "POST", path: "/api/pge/stop" },
+  "worker.status": { method: "GET", path: "/api/worker/status" },
+  "scan.resume": { method: "POST", path: "/api/scan/resume" },
+  "discoveries.list": { method: "GET", path: "/api/discoveries" },
+  "discoveries.ack": { method: "POST", path: "/api/discoveries/ack" },
 };
 
 const extractErrorMessage = (value: unknown): string => {
@@ -154,7 +158,19 @@ serve(async (req) => {
     headers["X-API-Key"] = workerApiKey;
   }
 
-  const workerUrl = `${workerBaseUrl}${route.path}`;
+  let workerUrl = `${workerBaseUrl}${route.path}`;
+  if (route.method === "GET" && body.payload && typeof body.payload === "object") {
+    const params = new URLSearchParams();
+    for (const [key, val] of Object.entries(body.payload)) {
+      if (val !== null && val !== undefined) {
+        params.append(key, String(val));
+      }
+    }
+    const qs = params.toString();
+    if (qs) {
+      workerUrl = `${workerUrl}?${qs}`;
+    }
+  }
 
   try {
     const response = await fetch(workerUrl, {

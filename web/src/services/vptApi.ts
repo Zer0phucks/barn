@@ -76,6 +76,7 @@ export interface VPTFilters {
   condition?: string;
   outofstate?: string;
   research?: string;
+  new?: string;  // '1' = only new discoveries (new_reviewed_at IS NULL), '' = all
   sort?: string;
   order?: string;
   page?: number;
@@ -141,6 +142,48 @@ export interface VPTEnrichmentStatus {
   completed: number;
   failed: number;
   pending_count: number;
+}
+
+export interface VPTWorkerInfo {
+  name: string;
+  last_heartbeat: string | null;
+  tunnel_url: string | null;
+  status: "online" | "offline";
+}
+
+export interface VPTJobInfo {
+  id: string;
+  job_type: string;
+  status: string;
+  current_city: string | null;
+  current_apn: string | null;
+  processed_count: number;
+  hit_count: number;
+  started_at: string | null;
+  checkpoint?: {
+    city: string | null;
+    apn: string | null;
+    row_offset: number | null;
+    phase: string | null;
+  } | null;
+}
+
+export interface VPTWorkerState {
+  worker: VPTWorkerInfo | null;
+  active_job: VPTJobInfo | null;
+  last_interrupted_job: VPTJobInfo | null;
+  error?: string;
+}
+
+export interface VPTDiscovery {
+  apn: string;
+  location_of_property: string | null;
+  city: string | null;
+  first_seen_at: string;
+  discovered_by_job_id: string | null;
+  has_vpt: number | null;
+  vpt_marker: string | null;
+  delinquent: number | null;
 }
 
 type RpcBillRow = {
@@ -332,6 +375,7 @@ const buildRpcArgs = (filters: VPTFilters, limit: number, offset: number) => ({
   p_offset: offset,
   p_research: filters.research || "",
   p_owner_name: "",
+  ...(filters.new === "1" ? { p_new: 1 } : {}),
 });
 
 const buildLegacyRpcArgs = (filters: VPTFilters, limit: number, offset: number) => ({
@@ -405,6 +449,10 @@ const workerRoutes: Record<string, WorkerRoute> = {
   "pge.start": { method: "POST", path: "/api/pge/start" },
   "pge.start_all": { method: "POST", path: "/api/pge/start-all" },
   "pge.stop": { method: "POST", path: "/api/pge/stop" },
+  "worker.status": { method: "GET", path: "/api/worker/status" },
+  "scan.resume": { method: "POST", path: "/api/scan/resume" },
+  "discoveries.list": { method: "GET", path: "/api/discoveries" },
+  "discoveries.ack": { method: "POST", path: "/api/discoveries/ack" },
 };
 
 const browserWorkerBaseUrl = (
@@ -982,6 +1030,43 @@ export async function vptStopPgeScan(): Promise<{ status: string; message: strin
     await invokeWorker<Record<string, unknown>>("pge.stop"),
     "PGE scan stop trigger sent."
   );
+}
+
+// Worker State
+export async function getWorkerStatus(): Promise<VPTWorkerState> {
+  const result = await invokeWorker<VPTWorkerState>("worker.status", undefined, true);
+  if (!result) {
+    return { worker: null, active_job: null, last_interrupted_job: null, error: "Worker not reachable." };
+  }
+  return result;
+}
+
+export async function resumeScan(): Promise<{ status: string; job_id?: string; message?: string }> {
+  const result = await invokeWorker<{ status: string; job_id?: string; message?: string }>(
+    "scan.resume"
+  );
+  return result || { status: "ok" };
+}
+
+// Discoveries
+export async function getDiscoveries(
+  limit = 50
+): Promise<{ discoveries: VPTDiscovery[]; total: number }> {
+  const result = await invokeWorker<{ discoveries: VPTDiscovery[]; total: number }>(
+    "discoveries.list",
+    { limit }
+  );
+  return result || { discoveries: [], total: 0 };
+}
+
+export async function acknowledgeDiscoveries(
+  apns: string[]
+): Promise<{ status: string; updated: number }> {
+  const result = await invokeWorker<{ status: string; updated: number }>(
+    "discoveries.ack",
+    { apns }
+  );
+  return result || { status: "ok", updated: 0 };
 }
 
 // Utility
