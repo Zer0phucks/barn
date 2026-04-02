@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS public.scanner_workers (
     name         TEXT        NOT NULL,
     last_heartbeat TIMESTAMPTZ,
     tunnel_url   TEXT,
-    status       TEXT        CHECK (status IN ('online', 'offline')),
+    status       TEXT        NOT NULL DEFAULT 'offline' CHECK (status IN ('online', 'offline')),
     capabilities JSONB,
     created_at   TIMESTAMPTZ DEFAULT now()
 );
@@ -75,7 +75,7 @@ ALTER TABLE public.bills
     ADD COLUMN IF NOT EXISTS first_seen_at       TIMESTAMPTZ;
 
 ALTER TABLE public.bills
-    ADD COLUMN IF NOT EXISTS discovered_by_job_id UUID;
+    ADD COLUMN IF NOT EXISTS discovered_by_job_id UUID REFERENCES public.scanner_jobs(id) ON DELETE SET NULL;
 
 ALTER TABLE public.bills
     ADD COLUMN IF NOT EXISTS new_reviewed_at     TIMESTAMPTZ;
@@ -86,6 +86,10 @@ CREATE INDEX IF NOT EXISTS idx_bills_new_reviewed_at_null
 
 CREATE INDEX IF NOT EXISTS idx_bills_first_seen_at
     ON public.bills (first_seen_at);
+
+-- Backfill existing rows: mark all pre-existing bills (those without first_seen_at)
+-- as already-reviewed so they don't pollute the new discoveries queue.
+UPDATE public.bills SET new_reviewed_at = now() WHERE new_reviewed_at IS NULL AND first_seen_at IS NULL;
 
 -- ============================================================
 -- 5. get_bills_filtered — add p_new parameter
