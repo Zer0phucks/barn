@@ -14,3 +14,7 @@ web/dist/
 # Misc
 .DS_Store
 *.log
+
+# Git worktrees
+.worktrees/
+
