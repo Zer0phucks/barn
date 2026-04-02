@@ -13,6 +13,9 @@ backed by Supabase tables:
 
 import db
 
+# Sentinel to distinguish "not provided" from "explicitly None"
+_UNSET = object()
+
 
 def heartbeat(worker_name: str, tunnel_url: str | None = None) -> str:
     """Upserts scanner_workers row. Returns worker_id (uuid str)."""
@@ -30,6 +33,8 @@ def heartbeat(worker_name: str, tunnel_url: str | None = None) -> str:
         .upsert(payload, on_conflict="name")
         .execute()
     )
+    if not result.data:
+        raise RuntimeError(f"heartbeat failed: upsert returned empty response for worker {worker_name}")
     return result.data[0]["id"]
 
 
@@ -48,32 +53,35 @@ def create_job(worker_id: str, job_type: str, scope: dict) -> str:
         )
         .execute()
     )
+    if not result.data:
+        raise RuntimeError(f"create_job failed: insert returned empty response for job_type {job_type}")
     return result.data[0]["id"]
 
 
 def update_job(
     job_id: str,
     *,
-    status: str | None = None,
-    current_city: str | None = None,
-    current_apn: str | None = None,
-    processed_count: int | None = None,
-    hit_count: int | None = None,
-    error_summary: str | None = None,
+    status: str | type(_UNSET) = _UNSET,
+    current_city: str | None | type(_UNSET) = _UNSET,
+    current_apn: str | None | type(_UNSET) = _UNSET,
+    processed_count: int | None | type(_UNSET) = _UNSET,
+    hit_count: int | None | type(_UNSET) = _UNSET,
+    error_summary: str | None | type(_UNSET) = _UNSET,
 ) -> None:
-    """Patches scanner_jobs row. Only updates provided kwargs."""
+    """Patches scanner_jobs row. Only updates provided kwargs.
+    Use None to explicitly clear a field, omit the parameter to leave it unchanged."""
     patch: dict = {}
-    if status is not None:
+    if status is not _UNSET:
         patch["status"] = status
-    if current_city is not None:
+    if current_city is not _UNSET:
         patch["current_city"] = current_city
-    if current_apn is not None:
+    if current_apn is not _UNSET:
         patch["current_apn"] = current_apn
-    if processed_count is not None:
+    if processed_count is not _UNSET:
         patch["processed_count"] = processed_count
-    if hit_count is not None:
+    if hit_count is not _UNSET:
         patch["hit_count"] = hit_count
-    if error_summary is not None:
+    if error_summary is not _UNSET:
         patch["error_summary"] = error_summary
 
     if not patch:
@@ -140,7 +148,7 @@ def get_resumable_job(job_type: str) -> dict | None:
     if not result.data:
         return None
 
-    job = result.data[0]
+    job = dict(result.data[0])
     job["checkpoint"] = get_latest_checkpoint(job["id"])
     return job
 

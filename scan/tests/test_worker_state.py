@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 SCAN_DIR = Path(__file__).resolve().parents[1]
 if str(SCAN_DIR) not in sys.path:
@@ -20,44 +20,6 @@ def _make_response(data: list) -> MagicMock:
     resp = MagicMock()
     resp.data = data
     return resp
-
-
-def _make_chain(response_data: list) -> MagicMock:
-    """Returns a mock that supports arbitrary chained calls ending in .execute()."""
-    terminal = MagicMock()
-    terminal.execute.return_value = _make_response(response_data)
-    chain = MagicMock()
-    chain.return_value = terminal
-    # Make every attribute access on chain return something that is also chainable
-    # and ultimately calls execute() correctly.  We build a recursive chain mock.
-    def _chainable(*args, **kwargs):
-        return terminal
-    chain.side_effect = None
-    # Use a helper that propagates through any number of chained calls
-    builder = _ChainBuilder(response_data)
-    return builder
-
-
-class _ChainBuilder:
-    """Supports .table().select().eq().order().limit().execute() style chains."""
-
-    def __init__(self, response_data: list) -> None:
-        self._response_data = response_data
-        self._calls: list = []
-
-    def __call__(self, *args, **kwargs) -> _ChainBuilder:
-        self._calls.append(("__call__", args, kwargs))
-        return self
-
-    def __getattr__(self, name: str) -> _ChainBuilder:
-        # Return self for any attribute so the chain continues
-        def method(*args, **kwargs):
-            self._calls.append((name, args, kwargs))
-            return self
-        return method
-
-    def execute(self):
-        return _make_response(self._response_data)
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +146,8 @@ class TestUpdateJob(unittest.TestCase):
         )
         builder.eq.assert_called_once_with("id", "job-abc")
 
-    def test_none_kwargs_not_included(self):
+    def test_none_kwargs_explicitly_clears_field(self):
+        """Passing None explicitly clears a field (sentinel pattern)."""
         client, builder, response = _build_client_mock([{"id": "j1"}])
 
         with patch("db.get_client", return_value=client):
@@ -199,8 +162,11 @@ class TestUpdateJob(unittest.TestCase):
         patch_dict = builder.update.call_args[0][0]
         self.assertIn("status", patch_dict)
         self.assertIn("hit_count", patch_dict)
-        self.assertNotIn("current_city", patch_dict)
-        self.assertNotIn("current_apn", patch_dict)
+        # Explicitly passing None should include the field with None value
+        self.assertIn("current_city", patch_dict)
+        self.assertIsNone(patch_dict["current_city"])
+        self.assertIn("current_apn", patch_dict)
+        self.assertIsNone(patch_dict["current_apn"])
 
     def test_all_kwargs_included_when_provided(self):
         client, builder, response = _build_client_mock([{"id": "j1"}])
@@ -223,6 +189,24 @@ class TestUpdateJob(unittest.TestCase):
         self.assertEqual(patch_dict["processed_count"], 100)
         self.assertEqual(patch_dict["hit_count"], 10)
         self.assertEqual(patch_dict["error_summary"], "some error")
+
+    def test_omitted_kwargs_not_included(self):
+        """Omitting a parameter (not passing it) means don't touch that field."""
+        client, builder, response = _build_client_mock([{"id": "j1"}])
+
+        with patch("db.get_client", return_value=client):
+            worker_state.update_job(
+                "job-abc",
+                status="completed",
+                hit_count=5,
+            )
+
+        patch_dict = builder.update.call_args[0][0]
+        self.assertIn("status", patch_dict)
+        self.assertIn("hit_count", patch_dict)
+        self.assertNotIn("current_city", patch_dict)
+        self.assertNotIn("current_apn", patch_dict)
+        self.assertNotIn("processed_count", patch_dict)
 
     def test_no_db_call_when_no_kwargs(self):
         client, builder, response = _build_client_mock([])
