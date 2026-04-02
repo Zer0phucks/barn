@@ -1215,7 +1215,13 @@ def api_scan_status():
         from collections import Counter
         status["city_counts"] = dict(Counter(row["city"] for row in (bills.data or []) if row.get("city")))
         status["scanner_available"] = True
-        
+
+        try:
+            import worker_state
+            status["durable_interrupted_job"] = worker_state.get_resumable_job("scan")
+        except Exception:
+            status["durable_interrupted_job"] = None
+
         return jsonify(status)
     except ModuleNotFoundError:
         # Scanner modules not available (e.g. Vercel deployment)
@@ -1265,6 +1271,144 @@ def api_scan_stop():
             return jsonify({"status": "error", "message": "Cannot stop (not in continuous mode)"})
     except ModuleNotFoundError:
         return jsonify({"status": "error", "message": "Scanner not available in cloud deployment"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+
+
+@app.route("/api/worker/status")
+@login_required
+def api_worker_status():
+    """Get durable worker + active job state from Supabase."""
+    try:
+        client = db.get_client()
+
+        # Most recent worker heartbeat
+        worker_result = (
+            client.table("scanner_workers")
+            .select("name, last_heartbeat, tunnel_url, status")
+            .order("last_heartbeat", desc=True)
+            .limit(1)
+            .execute()
+        )
+        worker = worker_result.data[0] if worker_result.data else None
+
+        # Active running job
+        active_result = (
+            client.table("scanner_jobs")
+            .select("id, job_type, status, current_city, current_apn, processed_count, hit_count, started_at")
+            .eq("status", "running")
+            .order("started_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        active_job = active_result.data[0] if active_result.data else None
+
+        # Most recent interrupted job (with checkpoint)
+        interrupted_result = (
+            client.table("scanner_jobs")
+            .select("id, job_type, status, current_city, started_at")
+            .eq("status", "interrupted")
+            .order("started_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        last_interrupted_job = None
+        if interrupted_result.data:
+            job = dict(interrupted_result.data[0])
+            # Fetch latest checkpoint for this interrupted job
+            checkpoint_result = (
+                client.table("scanner_job_checkpoints")
+                .select("*")
+                .eq("job_id", job["id"])
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            job["checkpoint"] = checkpoint_result.data[0] if checkpoint_result.data else None
+            last_interrupted_job = job
+
+        return jsonify({
+            "worker": worker,
+            "active_job": active_job,
+            "last_interrupted_job": last_interrupted_job,
+        })
+    except Exception:
+        return jsonify({"worker": None, "active_job": None, "last_interrupted_job": None})
+
+
+@app.route("/api/scan/resume", methods=["POST"])
+@login_required
+def api_scan_resume():
+    """Resume the latest interrupted scan job from its last checkpoint."""
+    try:
+        import worker_state
+        job = worker_state.get_resumable_job("scan")
+        if not job:
+            return jsonify({"status": "error", "message": "No interrupted scan job to resume"})
+
+        job_id = job["id"]
+        checkpoint = job.get("checkpoint")
+        checkpoint_city = checkpoint.get("city") if checkpoint else None
+
+        try:
+            import scanner.run_all as run_all
+            if checkpoint_city:
+                run_all.start_scan(city=checkpoint_city)
+            else:
+                run_all.start_scan()
+        except ModuleNotFoundError:
+            return jsonify({"status": "error", "message": "Scanner not available in cloud deployment"})
+
+        worker_state.update_job(job_id, status="running")
+        return jsonify({
+            "status": "ok",
+            "message": "Resuming from checkpoint",
+            "job_id": job_id,
+            "checkpoint": checkpoint,
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+
+
+@app.route("/api/discoveries")
+@login_required
+def api_discoveries():
+    """List unacknowledged new property discoveries."""
+    try:
+        client = db.get_client()
+        result = (
+            client.table("bills")
+            .select("apn, location_of_property, city, first_seen_at, discovered_by_job_id, has_vpt, vpt_marker, delinquent")
+            .is_("new_reviewed_at", "null")
+            .not_.is_("first_seen_at", "null")
+            .order("first_seen_at", desc=True)
+            .execute()
+        )
+        rows = result.data or []
+        return jsonify({"discoveries": rows, "total": len(rows)})
+    except Exception as e:
+        return jsonify({"error": str(e), "discoveries": [], "total": 0})
+
+
+@app.route("/api/discoveries/ack", methods=["POST"])
+@login_required
+def api_discoveries_ack():
+    """Acknowledge (mark as reviewed) one or more discoveries."""
+    try:
+        data = request.get_json() or {}
+        if "apns" in data:
+            apns = data["apns"]
+        elif "apn" in data:
+            apns = [data["apn"]]
+        else:
+            apns = []
+
+        if not apns:
+            return jsonify({"status": "error", "message": "No APNs provided"})
+
+        client = db.get_client()
+        client.table("bills").update({"new_reviewed_at": "now()"}).in_("apn", apns).execute()
+        return jsonify({"status": "ok", "updated": len(apns)})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 
