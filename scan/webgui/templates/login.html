@@ -176,6 +176,18 @@
     }};
     const supabaseAnonKey = {{ supabase_anon_key | tojson }};
     var supabase;
+    // Clear stale sessions pointing at a different Supabase URL (e.g. local dev vs prod).
+    (function clearStaleSession() {
+      try {
+        var storageKey = 'sb-' + supabaseUrl.replace(/^https?:\/\//, '').replace(/\..+/, '') + '-auth-token';
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k && k.endsWith('-auth-token') && k !== storageKey) {
+            localStorage.removeItem(k);
+          }
+        }
+      } catch(e) {}
+    })();
     function init() {
       var lib = window.supabase;
       if (!lib || !lib.createClient) {

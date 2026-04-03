@@ -151,16 +151,12 @@ print_success "pip upgraded"
 # =============================================================================
 print_header "Installing Python Dependencies"
 
-if [ -f "$SCRIPT_DIR/requirements-scan.txt" ]; then
-    print_info "Installing from requirements-scan.txt..."
-    pip install -r "$SCRIPT_DIR/requirements-scan.txt" -q
-    print_success "Python dependencies installed"
-elif [ -f "$SCRIPT_DIR/requirements.txt" ]; then
+if [ -f "$SCRIPT_DIR/requirements.txt" ]; then
     print_info "Installing from requirements.txt..."
     pip install -r "$SCRIPT_DIR/requirements.txt" -q
     print_success "Python dependencies installed"
 else
-    print_warning "requirements file not found, installing core packages..."
+    print_warning "requirements.txt not found, installing core packages..."
     pip install flask playwright supabase python-dotenv google-genai requests -q
     print_success "Core packages installed"
 fi
