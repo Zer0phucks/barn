@@ -183,6 +183,12 @@ def ping():
     return "pong", 200, {"Content-Type": "text/plain"}
 
 
+@app.route("/favicon.ico")
+def favicon():
+    """Avoid noisy browser 404s when no favicon asset is configured."""
+    return "", 204
+
+
 @app.route("/health")
 def health():
     """Health check for Vercel/deployments. No auth. Returns 200 if app is up, db status in body."""
