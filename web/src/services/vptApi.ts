@@ -175,6 +175,10 @@ export interface VPTWorkerState {
   error?: string;
 }
 
+/**
+ * Discovery from the worker API. Note: has_vpt and delinquent are raw DB integers (0/1/null),
+ * unlike VPTProperty where they are normalized to "Yes"/"No" strings by the RPC layer.
+ */
 export interface VPTDiscovery {
   apn: string;
   location_of_property: string | null;
@@ -528,7 +532,17 @@ const invokeWorkerDirect = async <T>(
   }
 
   try {
-    const response = await fetch(`${browserWorkerBaseUrl}${route.path}`, {
+    let url = browserWorkerBaseUrl + route.path;
+    if (route.method === "GET" && payload && Object.keys(payload).length > 0) {
+      const qs = new URLSearchParams(
+        Object.entries(payload)
+          .filter(([, v]) => v !== null && v !== undefined)
+          .map(([k, v]) => [k, String(v)])
+      ).toString();
+      if (qs) url = `${url}?${qs}`;
+    }
+
+    const response = await fetch(url, {
       method: route.method,
       headers,
       body: route.method === "POST" ? JSON.stringify(payload || {}) : undefined,

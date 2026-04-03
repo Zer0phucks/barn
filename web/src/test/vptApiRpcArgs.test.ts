@@ -42,4 +42,22 @@ describe("vptGetProperties rpc args", () => {
       })
     );
   });
+
+  it("passes p_new: 1 when filters.new is '1'", async () => {
+    await vptGetProperties({ new: "1" });
+
+    expect(rpcMock).toHaveBeenCalledWith(
+      "get_bills_filtered",
+      expect.objectContaining({
+        p_new: 1,
+      })
+    );
+  });
+
+  it("does not include p_new when filters.new is not set", async () => {
+    await vptGetProperties({ q: "oakland" });
+
+    const args = rpcMock.mock.calls[0][1] as Record<string, unknown>;
+    expect(args).not.toHaveProperty("p_new");
+  });
 });
