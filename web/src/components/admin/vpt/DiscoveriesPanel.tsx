@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,16 +14,23 @@ export default function DiscoveriesPanel() {
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [acking, setAcking] = useState<Set<string>>(new Set());
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    return () => { isMounted.current = false; };
+  }, []);
 
   const load = useCallback(async () => {
     try {
       const result = await getDiscoveries();
+      if (!isMounted.current) return;
       setDiscoveries(result.discoveries);
+      if (!isMounted.current) return;
       setTotal(result.total);
     } catch {
       // silently fail — panel is supplementary
     } finally {
-      setIsLoading(false);
+      if (isMounted.current) setIsLoading(false);
     }
   }, []);
 
@@ -35,8 +42,10 @@ export default function DiscoveriesPanel() {
     setAcking((prev) => new Set(prev).add(apn));
     try {
       await acknowledgeDiscoveries([apn]);
+      if (!isMounted.current) return;
       await load();
     } finally {
+      if (!isMounted.current) return;
       setAcking((prev) => {
         const next = new Set(prev);
         next.delete(apn);

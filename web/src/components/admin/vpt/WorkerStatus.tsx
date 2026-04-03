@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Play, Square } from "lucide-react";
@@ -33,13 +33,18 @@ function deriveLabel(state: VPTWorkerState): string {
 export default function WorkerStatus({ onAction }: WorkerStatusProps) {
   const [state, setState] = useState<VPTWorkerState | null>(null);
   const [isActing, setIsActing] = useState(false);
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    return () => { isMounted.current = false; };
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
       const result = await getWorkerStatus();
-      setState(result);
+      if (isMounted.current) setState(result);
     } catch {
-      setState({ worker: null, active_job: null, last_interrupted_job: null });
+      if (isMounted.current) setState({ worker: null, active_job: null, last_interrupted_job: null });
     }
   }, []);
 
@@ -53,10 +58,11 @@ export default function WorkerStatus({ onAction }: WorkerStatusProps) {
     setIsActing(true);
     try {
       await resumeScan();
+      if (!isMounted.current) return;
       await refresh();
       onAction?.();
     } finally {
-      setIsActing(false);
+      if (isMounted.current) setIsActing(false);
     }
   };
 
@@ -64,10 +70,11 @@ export default function WorkerStatus({ onAction }: WorkerStatusProps) {
     setIsActing(true);
     try {
       await vptStopScan();
+      if (!isMounted.current) return;
       await refresh();
       onAction?.();
     } finally {
-      setIsActing(false);
+      if (isMounted.current) setIsActing(false);
     }
   };
 
