@@ -1,0 +1,12 @@
+[project]
+name = "app"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "flask>=2.0.0",
+    # supabase<2.23 avoids storage3>=2.23 which introduced a pyiceberg dependency
+    # that requires gcc to compile and is unavailable in the Vercel build environment.
+    "supabase>=2.0.0,<2.23",
+    "python-dotenv>=1.0.0",
+    "requests>=2.0.0",
+]

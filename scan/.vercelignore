@@ -12,6 +12,7 @@ condition_scanner.py
 contact_scanner.py
 gemini_research_scanner.py
 build_results_db.py
+requirements-scan.txt
 .venv/
 venv/
 __pycache__/
