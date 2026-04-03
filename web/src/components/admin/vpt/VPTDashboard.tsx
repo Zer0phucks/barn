@@ -3,6 +3,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Database, List, Map } from "lucide-react";
 import VPTPropertiesTable from "./VPTPropertiesTable";
 import VPTMapView from "./VPTMapView";
+import WorkerStatus from "./WorkerStatus";
+import DiscoveriesPanel from "./DiscoveriesPanel";
 import { vptGetEnrichmentStatus, vptGetScanStatus } from "@/services/vptApi";
 
 export function getAutopilotHeaderStatus({ reachable }: { reachable: boolean }) {
@@ -75,6 +77,10 @@ export default function VPTDashboard() {
           Unified project mode
         </div>
       </div>
+
+      <WorkerStatus />
+
+      <DiscoveriesPanel />
 
       <Tabs defaultValue="properties" className="space-y-4">
         <TabsList>

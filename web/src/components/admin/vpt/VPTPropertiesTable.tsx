@@ -244,6 +244,14 @@ export default function VPTPropertiesTable() {
           />
           <label htmlFor="fav-filter" className="text-sm">Favorites</label>
         </div>
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="new-filter"
+            checked={filters.new === "1"}
+            onCheckedChange={(checked) => updateFilter("new", checked ? "1" : undefined)}
+          />
+          <label htmlFor="new-filter" className="text-sm">New</label>
+        </div>
         <Button onClick={fetchProperties} variant="outline" size="sm">
           <RefreshCw className="h-4 w-4 mr-1" />
           Refresh
