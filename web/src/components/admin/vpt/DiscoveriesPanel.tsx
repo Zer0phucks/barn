@@ -45,7 +45,6 @@ export default function DiscoveriesPanel() {
       if (!isMounted.current) return;
       await load();
     } finally {
-      if (!isMounted.current) return;
       setAcking((prev) => {
         const next = new Set(prev);
         next.delete(apn);

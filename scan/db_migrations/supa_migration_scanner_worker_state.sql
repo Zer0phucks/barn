@@ -18,6 +18,9 @@ CREATE TABLE IF NOT EXISTS public.scanner_workers (
 
 ALTER TABLE public.scanner_workers DISABLE ROW LEVEL SECURITY;
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_scanner_workers_name
+    ON public.scanner_workers (name);
+
 -- ============================================================
 -- 2. scanner_jobs — one row per scan run / job dispatch
 -- ============================================================
@@ -27,7 +30,7 @@ CREATE TABLE IF NOT EXISTS public.scanner_jobs (
     job_type        TEXT        NOT NULL,
     scope           JSONB,
     status          TEXT        NOT NULL CHECK (status IN ('running', 'interrupted', 'completed', 'failed')),
-    started_at      TIMESTAMPTZ,
+    started_at      TIMESTAMPTZ DEFAULT now(),
     stopped_at      TIMESTAMPTZ,
     completed_at    TIMESTAMPTZ,
     current_city    TEXT,
