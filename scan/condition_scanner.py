@@ -97,46 +97,47 @@ def get_property_coords(apn: str) -> tuple[float, float] | None:
     return None
 
 
-def fetch_streetview_image(lat: float, lng: float, apn: str) -> Path | None:
-    """Fetch satellite map image for coordinates using Google Maps Static API."""
-    if not REQUESTS_AVAILABLE:
-        print("  requests library not available")
-        return None
+async def fetch_streetview_image(lat: float, lng: float, apn: str) -> Path | None:
+    """Fetch satellite map image for coordinates using Playwright to screenshot embedded maps."""
+    safe_apn = apn.replace("/", "_").replace("\\", "_")
+    image_path = STREETVIEW_DIR / f"{safe_apn}.jpg"
 
-    if not GOOGLE_API_KEY:
-        print("  No API key configured")
-        return None
-
-    # Google Maps Static API — hybrid satellite view (satellite + road/label overlay)
-    url = (
-        f"https://maps.googleapis.com/maps/api/staticmap"
-        f"?center={lat},{lng}"
-        f"&zoom=19"
-        f"&size=640x480"
-        f"&maptype=hybrid"
-        f"&markers=color:red%7C{lat},{lng}"
-        f"&key={GOOGLE_API_KEY}"
-    )
-
+    if image_path.exists() and image_path.stat().st_size > 1000:
+        return image_path
+        
     try:
-        response = requests.get(url, timeout=30)
+        from playwright.async_api import async_playwright
+        import urllib.parse
+        
+        html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <style>
+        body {{ margin: 0; padding: 0; overflow: hidden; background: #eee; }}
+        iframe {{ border: none; width: 640px; height: 480px; }}
+        </style>
+        </head>
+        <body>
+        <iframe id="map_frame" src="https://maps.google.com/maps?q={lat},{lng}&t=k&z=19&output=embed"></iframe>
+        </body>
+        </html>
+        """
 
-        if response.status_code == 200:
-            content_type = response.headers.get("content-type", "")
-            if "image" in content_type and len(response.content) > 1000:
-                safe_apn = apn.replace("/", "_").replace("\\", "_")
-                image_path = STREETVIEW_DIR / f"{safe_apn}.jpg"
-
-                with open(image_path, "wb") as f:
-                    f.write(response.content)
-
-                return image_path
-            else:
-                print(f"  Image too small ({len(response.content)} bytes), likely an error response")
-        else:
-            print(f"  Maps Static API returned status {response.status_code}")
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page(viewport={"width": 640, "height": 480})
+            await page.set_content(html)
+            await page.wait_for_timeout(4000) # Wait for maps to load
+            
+            element = page.locator("iframe")
+            await element.screenshot(path=str(image_path), type="jpeg", quality=90)
+            await browser.close()
+            
+        if image_path.exists():
+            return image_path
     except Exception as e:
-        print(f"  Error fetching map image: {e}")
+        print(f"  Error fetching map image via playwright: {e}")
 
     return None
 
@@ -166,8 +167,8 @@ async def analyze_property_condition(apn: str) -> tuple[bool, float, str, Path |
     
     lat, lng = coords
     
-    # Fetch Street View image (now synchronous)
-    image_path = fetch_streetview_image(lat, lng, apn)
+    # Fetch Street View image (now async)
+    image_path = await fetch_streetview_image(lat, lng, apn)
     if not image_path or not image_path.exists():
         return False, 0, "Could not fetch Street View image", None
     
