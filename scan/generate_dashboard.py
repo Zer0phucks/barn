@@ -91,6 +91,12 @@ def generate(city="OAKLAND"):
             if not mailing_upper.endswith(" CA") and " CA " not in mailing_upper:
                 out_of_state_star = '<span class="text-yellow-400 text-xl inline-block drop-shadow-md ml-1" title="Out of State Mailing Address">⭐</span>'
         
+        # Deceased Status
+        deceased_count = prop.get("deceased_count") or 0
+        deceased_badge = ""
+        if deceased_count > 0:
+            deceased_badge = '<span class="inline-block bg-purple-600 text-white text-xs font-bold px-2 py-1 rounded shadow drop-shadow ml-2 flex items-center justify-center w-6 h-6" title="Deceased Owner/Resident">D</span>'
+
         last_sale = row_json.get("LatestDocumentDate") or "Unknown"
         if " " in last_sale and last_sale != "Unknown":
             last_sale = last_sale.split(" ")[0]
@@ -103,6 +109,7 @@ def generate(city="OAKLAND"):
                     <div class="absolute bottom-4 left-4 pointer-events-none flex items-center">
                         <span class="inline-block bg-red-500 text-white text-xs font-bold px-2 py-1 rounded shadow drop-shadow max-w-full">Defaulted</span>
                         {power_badge}
+                        {deceased_badge}
                     </div>
                 </div>
                 <div class="p-5">
