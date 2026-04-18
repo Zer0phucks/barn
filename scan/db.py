@@ -352,6 +352,11 @@ def _is_get_bills_filtered_missing_added_at_error(exc: Exception) -> bool:
     return "added_at" in msg and "does not exist" in msg
 
 
+def _is_rpc_auth_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "42501" in msg or "authenticated session" in msg
+
+
 def _execute_get_bills_filtered_rpc(
     payload: dict[str, Any],
     owner_name_filter: str = "",
@@ -679,7 +684,7 @@ def _attach_parcel_row_json(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return rows
 
     parcel_map: dict[str, Any] = {}
-    chunk_size = 500
+    chunk_size = 100
     for index in range(0, len(apns), chunk_size):
         chunk = apns[index : index + chunk_size]
         result = get_client().table("parcels").select("APN,row_json").in_("APN", chunk).execute()
@@ -814,7 +819,11 @@ def _fetch_bills_direct_fallback(
             break
         offset += batch_size
 
-    rows = _attach_parcel_row_json(rows)
+    # Only fetch heavy row_json upfront when outofstate filter needs it
+    need_row_json_early = (outofstate_filter or "").strip() == "1"
+    if need_row_json_early:
+        rows = _attach_parcel_row_json(rows)
+
     rows = [
         row
         for row in rows
@@ -830,6 +839,8 @@ def _fetch_bills_direct_fallback(
     total = len(rows)
 
     if page_size == 0:
+        if not need_row_json_early:
+            rows = _attach_parcel_row_json(rows)
         return rows, total
 
     limit = min(max(int(page_size), 10), 200)
@@ -837,6 +848,10 @@ def _fetch_bills_direct_fallback(
     start = (page_number - 1) * limit
     end = start + limit
     paged_rows = rows[start:end]
+
+    if not need_row_json_early:
+        paged_rows = _attach_parcel_row_json(paged_rows)
+
     paged_rows = _enrich_rows_with_contact_fields(paged_rows)
     return paged_rows, total
 
@@ -884,7 +899,7 @@ def get_bills_with_parcels_filtered(
     try:
         r = _execute_get_bills_filtered_rpc(payload, owner_name_filter=owner_name_filter)
     except Exception as exc:
-        if _is_get_bills_filtered_missing_added_at_error(exc):
+        if _is_get_bills_filtered_missing_added_at_error(exc) or _is_rpc_auth_error(exc):
             return _fetch_bills_direct_fallback(
                 q=q,
                 zip_filter=zip_filter,

@@ -1,0 +1,432 @@
+{% extends "base.html" %}
+{% block title %}Gallery – BARN{% endblock %}
+
+{% block head %}
+<style>
+  .gallery-controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    align-items: center;
+  }
+  .gallery-controls input,
+  .gallery-controls select {
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+  .gallery-controls button {
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    padding: 7px 16px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .gallery-controls button:hover { background: var(--primary-hover); }
+  .gallery-controls .btn-secondary {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  .gallery-controls .btn-secondary:hover { background: var(--border); }
+  .gallery-controls .muted { color: var(--text-muted); font-size: 13px; }
+
+  .gallery-controls details { position: relative; display: inline-block; }
+  .gallery-controls summary {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    background: var(--surface-2);
+    color: var(--text);
+    font-weight: 600;
+    font-size: 13px;
+    user-select: none;
+  }
+  .zip-panel {
+    position: absolute;
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 10px;
+    z-index: 1001;
+    margin-top: 4px;
+    border-radius: var(--radius);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 120px;
+  }
+  .zip-panel label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .fav-filter {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .fav-filter input { width: auto; }
+
+  .gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+  }
+
+  .gallery-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
+    text-decoration: none;
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+  }
+  .gallery-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .gallery-card:hover .card-img img { transform: scale(1.08); }
+
+  .card-img {
+    position: relative;
+    height: 180px;
+    overflow: hidden;
+    background: var(--surface-2);
+  }
+  .card-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.4s;
+  }
+  .card-img .no-img {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    font-size: 40px;
+  }
+  .card-img .overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .card-img .badges {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    pointer-events: none;
+  }
+  .card-img .badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  }
+  .badge-vpt       { background: #e74c3c; }
+  .badge-delinquent{ background: #c0392b; }
+  .badge-power-off { background: #e67e22; }
+  .badge-power-on  { background: #27ae60; }
+  .badge-deceased  { background: #8e44ad; }
+  .badge-fav       { background: #f39c12; }
+
+  .card-body {
+    padding: 14px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .card-body .card-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .card-body .card-meta {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .card-body .card-footer-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: auto;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+
+  .condition-pill {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+  .cond-good { background: rgba(39,174,96,0.2); color: #27ae60; }
+  .cond-fair { background: rgba(243,156,18,0.2); color: #f39c12; }
+  .cond-poor { background: rgba(231,76,60,0.2); color: #e74c3c; }
+  .cond-none { background: rgba(136,136,170,0.15); color: var(--text-muted); }
+
+  .outreach-pill {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+    color: #fff;
+  }
+  .os-high { background: #27ae60; }
+  .os-mid  { background: #f39c12; }
+  .os-low  { background: #e74c3c; }
+
+  .pager {
+    margin-top: 24px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .pager a {
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px 14px;
+    font-size: 13px;
+    text-decoration: none;
+    transition: background 0.15s;
+  }
+  .pager a:hover { background: var(--border); }
+  .pager .page-current {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+    padding: 6px 14px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .pager .muted { color: var(--text-muted); font-size: 13px; }
+
+  @media (max-width: 768px) {
+    .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+    .gallery-controls { gap: 6px; }
+  }
+</style>
+{% endblock %}
+
+{% block sidenav %}
+<nav class="sidenav">
+  <div class="sidenav-label">Search</div>
+  <a href="/search">List View</a>
+  <a href="/gallery" class="active">Gallery View</a>
+  <a href="/map">Map View</a>
+  <a href="/lists">My Lists</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+  <form class="gallery-controls" method="get" id="filter-form">
+    <input type="text" name="q" placeholder="Search..." value="{{ q }}" />
+    <details>
+      <summary>Select Zips</summary>
+      <div class="zip-panel">
+        {% for zip in available_zips %}
+        <label>
+          <input type="checkbox" name="zip" value="{{ zip }}" {% if zip in zip_filter.split(',') %}checked{% endif %}>
+          {{ zip }}
+        </label>
+        {% endfor %}
+      </div>
+    </details>
+    <input type="text" name="city" placeholder="City" value="{{ city_filter }}" style="width: 100px;" />
+    <input type="text" name="owner_name" placeholder="Owner Name" value="{{ owner_name_filter }}" style="width: 140px;" />
+    <select name="power">
+      <option value="" {% if not power_filter %}selected{% endif %}>All Power</option>
+      <option value="on" {% if power_filter=="on" %}selected{% endif %}>Power ON</option>
+      <option value="off" {% if power_filter=="off" %}selected{% endif %}>Power OFF</option>
+      <option value="unknown" {% if power_filter=="unknown" %}selected{% endif %}>Unknown</option>
+    </select>
+    <label class="fav-filter">
+      <input type="checkbox" name="vpt" value="1" {% if vpt_filter=="1" %}checked{% endif %} /> VPT
+    </label>
+    <label class="fav-filter">
+      <input type="checkbox" name="delinquent" value="1" {% if delinquent_filter=="1" %}checked{% endif %} /> Delinquent
+    </label>
+    <label class="fav-filter">
+      <input type="checkbox" name="outofstate" value="1" {% if outofstate_filter=="1" %}checked{% endif %} /> Out of State
+    </label>
+    <select name="sort">
+      <option value="added_at" {% if sort=="added_at" %}selected{% endif %}>Date Added</option>
+      <option value="location_of_property" {% if sort=="location_of_property" %}selected{% endif %}>Location</option>
+      <option value="city" {% if sort=="city" %}selected{% endif %}>City</option>
+      <option value="condition_score" {% if sort=="condition_score" %}selected{% endif %}>Condition</option>
+      <option value="outreach_score" {% if sort=="outreach_score" %}selected{% endif %}>Outreach Score</option>
+      <option value="primary_resident_age" {% if sort=="primary_resident_age" %}selected{% endif %}>Resident Age</option>
+      <option value="deceased_count" {% if sort=="deceased_count" %}selected{% endif %}>Deceased Count</option>
+    </select>
+    <select name="condition">
+      <option value="" {% if not condition_filter %}selected{% endif %}>All Condition</option>
+      <option value="good" {% if condition_filter=="good" %}selected{% endif %}>Good (1-3)</option>
+      <option value="fair" {% if condition_filter=="fair" %}selected{% endif %}>Fair (4-6)</option>
+      <option value="poor" {% if condition_filter=="poor" %}selected{% endif %}>Poor (7-10)</option>
+      <option value="unscanned" {% if condition_filter=="unscanned" %}selected{% endif %}>Not Scanned</option>
+    </select>
+    <select name="research">
+      <option value="" {% if not research_filter %}selected{% endif %}>All Research</option>
+      <option value="completed" {% if research_filter=="completed" %}selected{% endif %}>Researched</option>
+      <option value="unchecked" {% if research_filter=="unchecked" %}selected{% endif %}>Not Researched</option>
+    </select>
+    <select name="outreach_stage">
+      <option value="" {% if not outreach_stage_filter %}selected{% endif %}>All Stages</option>
+      <option value="Identified" {% if outreach_stage_filter=="Identified" %}selected{% endif %}>Identified</option>
+      <option value="Qualified" {% if outreach_stage_filter=="Qualified" %}selected{% endif %}>Qualified</option>
+      <option value="Outreach Ready" {% if outreach_stage_filter=="Outreach Ready" %}selected{% endif %}>Outreach Ready</option>
+      <option value="Contacted" {% if outreach_stage_filter=="Contacted" %}selected{% endif %}>Contacted</option>
+      <option value="Responding" {% if outreach_stage_filter=="Responding" %}selected{% endif %}>Responding</option>
+      <option value="Negotiating" {% if outreach_stage_filter=="Negotiating" %}selected{% endif %}>Negotiating</option>
+      <option value="Partnered" {% if outreach_stage_filter=="Partnered" %}selected{% endif %}>Partnered</option>
+      <option value="Declined" {% if outreach_stage_filter=="Declined" %}selected{% endif %}>Declined</option>
+      <option value="No Response" {% if outreach_stage_filter=="No Response" %}selected{% endif %}>No Response</option>
+    </select>
+    <select name="order">
+      <option value="asc" {% if order=="asc" %}selected{% endif %}>Asc</option>
+      <option value="desc" {% if order=="desc" %}selected{% endif %}>Desc</option>
+    </select>
+    <button type="submit">Apply</button>
+    <button type="button" class="btn-secondary" onclick="location.href='/gallery'">Clear</button>
+    <span class="muted">{{ total }} properties</span>
+  </form>
+
+  {% if rows %}
+  <div class="gallery-grid">
+    {% for r in rows %}
+    <a href="{{ url_for('property_detail', apn=r.apn, return_to=return_to_path) }}" class="gallery-card">
+      <div class="card-img">
+        <img src="/api/streetview/{{ r.apn }}" alt="{{ r.location_of_property }}" loading="lazy"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+        <div class="no-img" style="display:none;">🏚️</div>
+        <div class="overlay"></div>
+        <div class="badges">
+          {% if r.has_vpt == 'Yes' %}<span class="badge badge-vpt">VPT</span>{% endif %}
+          {% if r.delinquent == 'Yes' %}<span class="badge badge-delinquent">Delinquent</span>{% endif %}
+          {% if r.power_status == 'OFF' %}<span class="badge badge-power-off">⚡ Off</span>{% endif %}
+          {% if r.power_status == 'ON' %}<span class="badge badge-power-on">⚡ On</span>{% endif %}
+          {% if r.deceased_count and r.deceased_count > 0 %}<span class="badge badge-deceased">D</span>{% endif %}
+          {% if r.is_favorite %}<span class="badge badge-fav">★</span>{% endif %}
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="card-title" title="{{ r.location_of_property }}">{{ r.location_of_property }}</div>
+        <div class="card-meta">
+          <span>{{ r.city }}{% if r.situs_zip %} {{ r.situs_zip }}{% endif %}</span>
+        </div>
+        <div class="card-meta">APN: {{ r.apn }}</div>
+        {% if r.owner_name %}<div class="card-meta">{{ r.owner_name }}</div>{% endif %}
+        {% if r.prop_last_sale_date %}<div class="card-meta">Last Sale: {{ r.prop_last_sale_date }}</div>{% endif %}
+        <div class="card-footer-row">
+          <span>
+            {% if r.condition_score is not none %}
+              {% set cs = r.condition_score %}
+              <span class="condition-pill {% if cs <= 3.0 %}cond-good{% elif cs <= 6.0 %}cond-fair{% else %}cond-poor{% endif %}">
+                {{ "%.1f"|format(cs) }}
+              </span>
+            {% else %}
+              <span class="condition-pill cond-none">–</span>
+            {% endif %}
+          </span>
+          <span>
+            {% if r.outreach_score is not none %}
+              {% set os = r.outreach_score %}
+              <span class="outreach-pill {% if os >= 70 %}os-high{% elif os >= 50 %}os-mid{% else %}os-low{% endif %}">
+                {{ os }}
+              </span>
+            {% endif %}
+            {% if r.outreach_stage %}
+              <span style="font-size:11px;color:var(--text-muted);margin-left:4px;">{{ r.outreach_stage }}</span>
+            {% endif %}
+          </span>
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:60px 20px;color:var(--text-muted);">
+    <div style="font-size:48px;margin-bottom:12px;">🏠</div>
+    <p>No properties match your filters.</p>
+  </div>
+  {% endif %}
+
+  {% if total_pages > 1 %}
+  <div class="pager">
+    {% set filter_qs = "q=" ~ q ~ "&zip=" ~ zip_filter ~ "&city=" ~ city_filter ~ "&owner_name=" ~ owner_name_filter ~ "&power=" ~ power_filter ~ "&vpt=" ~ vpt_filter ~ "&delinquent=" ~ delinquent_filter ~ "&condition=" ~ condition_filter ~ "&outofstate=" ~ outofstate_filter ~ "&research=" ~ research_filter ~ "&outreach_stage=" ~ outreach_stage_filter ~ "&sort=" ~ sort ~ "&order=" ~ order %}
+
+    {% if page > 1 %}
+      <a href="?{{ filter_qs }}&page=1">« First</a>
+      <a href="?{{ filter_qs }}&page={{ page - 1 }}">‹ Prev</a>
+    {% endif %}
+
+    {% set start_page = [1, page - 3] | max %}
+    {% set end_page = [total_pages, page + 3] | min %}
+
+    {% for p in range(start_page, end_page + 1) %}
+      {% if p == page %}
+        <span class="page-current">{{ p }}</span>
+      {% else %}
+        <a href="?{{ filter_qs }}&page={{ p }}">{{ p }}</a>
+      {% endif %}
+    {% endfor %}
+
+    {% if page < total_pages %}
+      <a href="?{{ filter_qs }}&page={{ page + 1 }}">Next ›</a>
+      <a href="?{{ filter_qs }}&page={{ total_pages }}">Last »</a>
+    {% endif %}
+
+    <span class="muted">Page {{ page }} of {{ total_pages }}</span>
+  </div>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  fetch("/api/apn_list" + window.location.search)
+    .then(function(r) { return r.json(); })
+    .then(function(list) {
+      try { localStorage.setItem("barn_apn_list", JSON.stringify(list)); } catch (e) {}
+    })
+    .catch(function() {});
+</script>
+{% endblock %}

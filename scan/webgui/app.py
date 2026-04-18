@@ -545,6 +545,132 @@ def search_page():
     )
 
 
+@app.route("/gallery")
+@login_required
+def gallery_page():
+    """Render the gallery (card grid) view with street-view thumbnails."""
+    q = (request.args.get("q") or "").strip()
+    zip_list = request.args.getlist("zip")
+    zip_filter = ",".join(item.strip() for sub in zip_list for item in sub.split(",") if item.strip())
+    power_filter = (request.args.get("power") or "").strip()
+    fav_filter = (request.args.get("fav") or "").strip()
+    city_filter = (request.args.get("city") or "").strip().upper()
+    vpt_filter = (request.args.get("vpt") or "").strip()
+    delinquent_filter = (request.args.get("delinquent") or "").strip()
+    condition_filter = (request.args.get("condition") or "").strip()
+    outofstate_filter = (request.args.get("outofstate") or "").strip()
+    research_filter = (request.args.get("research") or "").strip()
+    occupancy_filter = (request.args.get("occupancy_type") or "").strip()
+    ownership_filter = (request.args.get("ownership_type") or "").strip()
+    primary_resident_age_filter = (request.args.get("primary_resident_age") or "").strip()
+    deceased_count_filter = (request.args.get("deceased_count") or "").strip()
+    outreach_stage_filter = (request.args.get("outreach_stage") or "").strip()
+    owner_name_filter = (request.args.get("owner_name") or "").strip()
+    sort = request.args.get("sort") or "location_of_property"
+    order = request.args.get("order") or "asc"
+    page = max(int(request.args.get("page") or 1), 1)
+    page_size = 100
+
+    allowed_sorts = {
+        "added_at", "location_of_property", "apn", "parcel_number",
+        "tracer_number", "tax_year", "pdf_file", "situs_zip", "last_payment",
+        "delinquent", "power_status", "city", "has_vpt", "condition_score",
+        "primary_resident_age", "deceased_count", "outreach_score",
+    }
+    if sort not in allowed_sorts:
+        sort = "location_of_property"
+    order = "desc" if order.lower() == "desc" else "asc"
+
+    favorites_set = set(db.get_favorites_apns())
+    rows, total = db.get_bills_with_parcels_filtered(
+        q=q,
+        zip_filter=zip_filter,
+        power_filter=power_filter,
+        fav_filter=fav_filter,
+        city_filter=city_filter,
+        vpt_filter=vpt_filter,
+        delinquent_filter=delinquent_filter,
+        condition_filter=condition_filter,
+        outofstate_filter=outofstate_filter,
+        research_filter=research_filter,
+        owner_name_filter=owner_name_filter,
+        sort=sort,
+        order=order,
+        page=page,
+        page_size=page_size,
+    )
+
+    if outreach_stage_filter:
+        stage_val = outreach_stage_filter.lower().replace(" ", "_")
+        rows = [r for r in rows if (r.get("outreach_stage") or "identified") == stage_val]
+        total = len(rows)
+
+    display = []
+    for r in rows:
+        parcel = parse_row_json(r["row_json"])
+        power = r["power_status"] or ""
+        apn = r["apn"]
+        display.append(
+            {
+                "apn": apn,
+                "location_of_property": r["location_of_property"],
+                "city": r["city"] or parcel.get("SitusCity") or "",
+                "situs_zip": r["situs_zip"] or "",
+                "power_status": power.upper() if power else "",
+                "has_vpt": "Yes" if (r["has_vpt"] or 0) == 1 else "No",
+                "delinquent": "Yes" if (r["delinquent"] or 0) == 1 else "No",
+                "condition_score": r["condition_score"],
+                "condition_notes": r["condition_notes"] or "",
+                "is_favorite": apn in favorites_set,
+                "prop_last_sale_date": r.get("prop_last_sale_date") or "",
+                "owner_name": r.get("owner_name") or "",
+                "outreach_score": r.get("outreach_score"),
+                "outreach_stage": r.get("outreach_stage") or "",
+                "deceased_count": r.get("deceased_count"),
+                "prop_occupancy_type": r.get("prop_occupancy_type") or "",
+                "maps_url": (
+                    f"https://www.google.com/maps/search/?api=1&query="
+                    f"{quote_plus(r['location_of_property'] or '')}"
+                    if r["location_of_property"]
+                    else ""
+                ),
+            }
+        )
+
+    total_pages = max((int(total) + page_size - 1) // page_size, 1)
+    return_to_path = request.full_path if request.query_string else request.path
+
+    return render_template(
+        "gallery.html",
+        active_nav="search",
+        rows=display,
+        return_to_path=return_to_path,
+        q=q,
+        zip_filter=zip_filter,
+        power_filter=power_filter,
+        fav_filter=fav_filter,
+        city_filter=city_filter,
+        vpt_filter=vpt_filter,
+        delinquent_filter=delinquent_filter,
+        condition_filter=condition_filter,
+        outofstate_filter=outofstate_filter,
+        research_filter=research_filter,
+        occupancy_filter=occupancy_filter,
+        ownership_filter=ownership_filter,
+        primary_resident_age_filter=primary_resident_age_filter,
+        deceased_count_filter=deceased_count_filter,
+        outreach_stage_filter=outreach_stage_filter,
+        owner_name_filter=owner_name_filter,
+        sort=sort,
+        order=order,
+        page=page,
+        page_size=page_size,
+        total=total,
+        total_pages=total_pages,
+        available_zips=db.get_distinct_zips(),
+    )
+
+
 @app.route("/api/apn_list")
 @login_required
 def api_apn_list():
