@@ -6,6 +6,7 @@ Replaces all SQLite usage with Supabase client.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import time
@@ -984,22 +985,64 @@ def get_bills_missing_location() -> list[tuple[str, str]]:
     return [(row["apn"], row.get("bill_url") or "") for row in (r.data or []) if not (row.get("location_of_property") or "").strip()]
 
 
-def get_bills_missing_research() -> list[str]:
+def count_bills_missing_research() -> int:
+    """Count bills where research_status is NULL or 'unchecked'."""
+    r = (
+        get_client()
+        .table("bills")
+        .select("apn", count="exact")
+        .or_("research_status.is.null,research_status.eq.unchecked")
+        .limit(1)
+        .execute()
+    )
+    return r.count or 0
+
+
+def get_bills_missing_research(limit: int | None = None, offset: int = 0) -> list[str]:
     """
     Get APNs of bills that have not been researched.
 
     Definition of "missing research":
       - research_status is NULL, or
       - research_status == 'unchecked'
+
+    When limit is set, returns a stable page via order(apn) and range (for batch APIs).
+    When limit is None, returns all matching APNs (legacy behavior).
     """
-    r = (
+    q = (
         get_client()
         .table("bills")
         .select("apn")
         .or_("research_status.is.null,research_status.eq.unchecked")
-        .execute()
+        .order("apn")
     )
+    if limit is not None:
+        if limit <= 0:
+            return []
+        q = q.range(offset, offset + limit - 1)
+    r = q.execute()
     return [row["apn"] for row in (r.data or []) if row.get("apn")]
+
+
+def update_bill_ai_vacancy(
+    apn: str,
+    *,
+    verdict: str | None = None,
+    confidence: float | None = None,
+    rationale: str | None = None,
+) -> None:
+    """Persist structured AI vacancy fields from deep research (additive; does not change has_vpt)."""
+    from datetime import datetime as _dt
+
+    now = _dt.now().isoformat()
+    data: dict[str, Any] = {"ai_vacancy_updated_at": now}
+    if verdict is not None:
+        data["ai_vacancy_verdict"] = verdict
+    if confidence is not None:
+        data["ai_vacancy_confidence"] = confidence
+    if rationale is not None:
+        data["ai_vacancy_rationale"] = rationale
+    get_client().table("bills").update(data).eq("apn", apn).execute()
 
 
 # ---------------------------------------------------------------------------
@@ -1107,32 +1150,136 @@ def delete_list(list_id: int) -> bool:
     return bool(r.data)
 
 
-def get_list_properties(list_id: int) -> list[dict]:
-    # Join list_properties -> bills -> parcels for full rows
-    lp = get_client().table("list_properties").select("apn, sort_order").eq("list_id", list_id).order("sort_order").execute()
-    if not lp.data:
+def _web_mercator_to_latlng(x: float, y: float) -> tuple[float, float]:
+    lng = (x / 20037508.34) * 180
+    lat = (y / 20037508.34) * 180
+    lat = 180 / math.pi * (2 * math.atan(math.exp(lat * math.pi / 180)) - math.pi / 2)
+    return lat, lng
+
+
+def _extract_lat_lng_from_row_json(row_json: str | dict | None) -> tuple[float | None, float | None]:
+    if not row_json:
+        return None, None
+    if isinstance(row_json, str):
+        try:
+            row_json = json.loads(row_json)
+        except json.JSONDecodeError:
+            return None, None
+    if not isinstance(row_json, dict):
+        return None, None
+    try:
+        x = float(row_json.get("CENTROID_X") or row_json.get("X_CORD") or row_json.get("x") or 0)
+        y = float(row_json.get("CENTROID_Y") or row_json.get("Y_CORD") or row_json.get("y") or 0)
+    except (TypeError, ValueError):
+        return None, None
+    if not x or not y:
+        return None, None
+    return _web_mercator_to_latlng(x, y)
+
+
+def _normalize_list_apns(apns: list[str], existing_apns: set[str] | None = None) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    existing_lookup = existing_apns or set()
+    for raw_apn in apns:
+        apn = str(raw_apn or "").strip()
+        if not apn or apn in seen:
+            continue
+        if existing_lookup and apn not in existing_lookup:
+            continue
+        cleaned.append(apn)
+        seen.add(apn)
+    return cleaned
+
+
+def _fetch_list_property_context(list_id: int) -> list[dict[str, Any]]:
+    lp = (
+        get_client()
+        .table("list_properties")
+        .select("apn, sort_order")
+        .eq("list_id", list_id)
+        .order("sort_order")
+        .execute()
+    )
+    rows = lp.data or []
+    if not rows:
         return []
-    apns = [row["apn"] for row in lp.data]
+
+    apns = [str(row["apn"]) for row in rows if row.get("apn")]
     if not apns:
         return []
-    bills = get_client().table("bills").select("apn, location_of_property, city, has_vpt, condition_score").in_("apn", apns).execute()
-    bill_map = {b["apn"]: b for b in (bills.data or [])}
-    out = []
-    for row in lp.data:
-        apn = row["apn"]
-        b = bill_map.get(apn, {})
-        parcel_r = get_client().table("parcels").select("row_json").eq("APN", apn).limit(1).execute()
-        row_json = parcel_r.data[0].get("row_json") if (parcel_r.data and len(parcel_r.data) > 0) else None
+
+    bills = (
+        get_client()
+        .table("bills")
+        .select(
+            "apn, location_of_property, city, has_vpt, condition_score, streetview_image_path, power_status, delinquent, deceased_count"
+        )
+        .in_("apn", apns)
+        .execute()
+    )
+    bill_map = {b["apn"]: b for b in (bills.data or []) if b.get("apn")}
+    parcel_rows = (
+        get_client()
+        .table("parcels")
+        .select("APN, row_json")
+        .in_("APN", apns)
+        .execute()
+    )
+    parcel_map = {
+        row.get("APN"): row.get("row_json")
+        for row in (parcel_rows.data or [])
+        if row.get("APN")
+    }
+
+    favorites = set(get_favorites_apns())
+    out: list[dict[str, Any]] = []
+    for queue_position, row in enumerate(rows):
+        apn = str(row.get("apn") or "").strip()
+        if not apn:
+            continue
+        bill = bill_map.get(apn, {})
+        row_json = parcel_map.get(apn)
+        lat, lng = _extract_lat_lng_from_row_json(row_json)
+        parcel = row_json if isinstance(row_json, dict) else _parse_row_json_value(row_json)
+        badges = []
+        if bill.get("has_vpt") in (1, True, "1"):
+            badges.append("VPT")
+        if bill.get("power_status"):
+            badges.append(f"Power {str(bill.get('power_status')).upper()}")
+        if bill.get("delinquent") in (1, True, "1"):
+            badges.append("Delinquent")
+        if apn in favorites:
+            badges.append("Favorite")
+
         out.append({
             "apn": apn,
-            "location_of_property": b.get("location_of_property"),
-            "city": b.get("city"),
-            "has_vpt": b.get("has_vpt"),
-            "condition_score": b.get("condition_score"),
-            "row_json": row_json,
             "sort_order": row.get("sort_order"),
+            "queue_position": queue_position,
+            "location_of_property": bill.get("location_of_property") or "",
+            "address": bill.get("location_of_property") or "",
+            "city": bill.get("city") or parcel.get("SitusCity") or "",
+            "has_vpt": bill.get("has_vpt") in (1, True, "1"),
+            "condition_score": bill.get("condition_score"),
+            "streetview_image_path": bill.get("streetview_image_path") or "",
+            "power_status": (bill.get("power_status") or "").upper(),
+            "is_favorite": apn in favorites,
+            "latitude": lat,
+            "longitude": lng,
+            "lat": lat,
+            "lng": lng,
+            "row_json": row_json,
+            "badges": badges,
         })
     return out
+
+
+def get_list_properties(list_id: int) -> list[dict]:
+    return _fetch_list_property_context(list_id)
+
+
+def append_properties_to_list(list_id: int, apns: list[str]) -> int:
+    return add_properties_to_list(list_id, apns)
 
 
 def add_properties_to_list(list_id: int, apns: list[str]) -> int:
@@ -1140,16 +1287,27 @@ def add_properties_to_list(list_id: int, apns: list[str]) -> int:
     if not apns:
         return 0
     existing = get_client().table("list_properties").select("apn").eq("list_id", list_id).execute()
-    existing_apns = {row["apn"] for row in (existing.data or [])}
-    max_order_r = get_client().table("list_properties").select("sort_order").eq("list_id", list_id).order("sort_order", desc=True).limit(1).execute()
+    existing_apns = {str(row["apn"]) for row in (existing.data or []) if row.get("apn")}
+    max_order_r = (
+        get_client()
+        .table("list_properties")
+        .select("sort_order")
+        .eq("list_id", list_id)
+        .order("sort_order", desc=True)
+        .limit(1)
+        .execute()
+    )
     sort_order = (max_order_r.data[0]["sort_order"] + 1) if max_order_r.data else 0
     added = 0
-    for i, apn in enumerate(apns):
-        if apn in existing_apns:
+    next_sort_order = sort_order
+    for raw_apn in apns:
+        apn = str(raw_apn or "").strip()
+        if not apn or apn in existing_apns:
             continue
-        get_client().table("list_properties").upsert({"list_id": list_id, "apn": apn, "sort_order": sort_order + i}).execute()
+        get_client().table("list_properties").upsert({"list_id": list_id, "apn": apn, "sort_order": next_sort_order}).execute()
         existing_apns.add(apn)
         added += 1
+        next_sort_order += 1
     return added
 
 
@@ -1185,21 +1343,8 @@ def add_properties_to_list_from_filter(
         page=1,
         page_size=limit,
     )
-    apns = [r["apn"] for r in rows if r.get("apn")]
-    if not apns:
-        return 0
-    existing = get_client().table("list_properties").select("apn").eq("list_id", list_id).execute()
-    existing_apns = {row["apn"] for row in (existing.data or [])}
-    max_order_r = get_client().table("list_properties").select("sort_order").eq("list_id", list_id).order("sort_order", desc=True).limit(1).execute()
-    sort_order = (max_order_r.data[0]["sort_order"] + 1) if max_order_r.data else 0
-    added = 0
-    for i, apn in enumerate(apns):
-        if apn in existing_apns:
-            continue
-        get_client().table("list_properties").upsert({"list_id": list_id, "apn": apn, "sort_order": sort_order + i}).execute()
-        existing_apns.add(apn)
-        added += 1
-    return added
+    apns = [str(r["apn"]) for r in rows if r.get("apn")]
+    return add_properties_to_list(list_id, apns)
 
 
 def remove_property_from_list(list_id: int, apn: str) -> bool:
@@ -1207,30 +1352,77 @@ def remove_property_from_list(list_id: int, apn: str) -> bool:
     return bool(r.data)
 
 
+def reorder_list_properties(list_id: int, apns: list[str]) -> int:
+    if not apns:
+        return 0
+
+    current_rows = (
+        get_client()
+        .table("list_properties")
+        .select("apn, sort_order")
+        .eq("list_id", list_id)
+        .order("sort_order")
+        .execute()
+    )
+    current = [str(row["apn"]) for row in (current_rows.data or []) if row.get("apn")]
+    if not current:
+        return 0
+
+    current_set = set(current)
+    requested = _normalize_list_apns([str(apn) for apn in apns], existing_apns=current_set)
+    if not requested:
+        return 0
+
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for apn in requested:
+        if apn in current_set and apn not in seen:
+            ordered.append(apn)
+            seen.add(apn)
+    for apn in current:
+        if apn not in seen:
+            ordered.append(apn)
+            seen.add(apn)
+
+    updated = 0
+    for sort_order, apn in enumerate(ordered):
+        get_client().table("list_properties").upsert({"list_id": list_id, "apn": apn, "sort_order": sort_order}).execute()
+        updated += 1
+    return updated
+
+
 def get_list_route_waypoints(list_id: int) -> list[dict]:
-    lp = get_client().table("list_properties").select("apn, sort_order").eq("list_id", list_id).order("sort_order").execute()
-    if not lp.data:
-        return []
-    waypoints = []
-    for row in lp.data:
-        apn = row["apn"]
-        bill = get_client().table("bills").select("apn, location_of_property").eq("apn", apn).limit(1).execute()
-        parcel = get_client().table("parcels").select("row_json").eq("APN", apn).limit(1).execute()
-        loc = bill.data[0].get("location_of_property") if (bill.data and len(bill.data) > 0) else ""
-        row_json = parcel.data[0].get("row_json") if (parcel.data and len(parcel.data) > 0) else None
-        try:
-            p = json.loads(row_json) if isinstance(row_json, str) else (row_json or {})
-            x = float(p.get("CENTROID_X") or p.get("X_CORD") or 0)
-            y = float(p.get("CENTROID_Y") or p.get("Y_CORD") or 0)
-        except (TypeError, ValueError, json.JSONDecodeError):
+    return [
+        {"lat": stop["lat"], "lng": stop["lng"], "address": stop["address"]}
+        for stop in get_list_route_preview(list_id)["stops"]
+    ]
+
+
+def get_list_route_preview(list_id: int) -> dict[str, Any]:
+    """Return ordered route preview data for a list."""
+    stops = []
+    for row in _fetch_list_property_context(list_id):
+        if row.get("latitude") is None or row.get("longitude") is None:
             continue
-        if x and y:
-            import math
-            lng = (x / 20037508.34) * 180
-            lat = (y / 20037508.34) * 180
-            lat = 180 / math.pi * (2 * math.atan(math.exp(lat * math.pi / 180)) - math.pi / 2)
-            waypoints.append({"lat": lat, "lng": lng, "address": loc})
-    return waypoints
+        stops.append(
+            {
+                "apn": row["apn"],
+                "queue_position": row.get("queue_position"),
+                "address": row.get("address") or "",
+                "city": row.get("city") or "",
+                "lat": row.get("latitude"),
+                "lng": row.get("longitude"),
+                "latitude": row.get("latitude"),
+                "longitude": row.get("longitude"),
+                "has_vpt": row.get("has_vpt", False),
+                "condition_score": row.get("condition_score"),
+                "streetview_image_path": row.get("streetview_image_path") or "",
+                "power_status": row.get("power_status") or "",
+                "is_favorite": row.get("is_favorite", False),
+                "badges": row.get("badges", []),
+            }
+        )
+    return {"list_id": list_id, "total": len(stops), "stops": stops}
 
 
 # ---------------------------------------------------------------------------
@@ -1700,6 +1892,31 @@ def get_distinct_zips() -> list[str]:
     elif isinstance(data, list) and all(isinstance(x, str) for x in data):
         return data
     return []
+
+
+def get_distinct_cities() -> list[str]:
+    """Fetch distinct normalized city names from bills."""
+    cities: set[str] = set()
+    offset = 0
+    page_size = 1000
+    while True:
+        r = (
+            get_client()
+            .table("bills")
+            .select("city")
+            .not_.is_("city", "null")
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        rows = r.data or []
+        for row in rows:
+            city = str(row.get("city") or "").strip().lstrip("_ ").upper()
+            if city:
+                cities.add(city)
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return sorted(cities)
 
 
 def update_property_notes(apn: str, important_notes: str) -> None:

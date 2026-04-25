@@ -15,7 +15,7 @@ from typing import Any, cast
 from urllib.parse import quote_plus, urlsplit
 
 # pyre-ignore[21]: Could not find import
-from flask import Flask, render_template, request, send_from_directory, jsonify, redirect, url_for, session
+from flask import Flask, Response, render_template, request, send_from_directory, jsonify, redirect, url_for, session
 # pyre-ignore[21]
 from werkzeug.exceptions import HTTPException
 
@@ -139,6 +139,114 @@ def _supabase_configured() -> bool:
         or os.environ.get("SUPABASE_ANON_KEY", "")
     )
     return bool(url and key)
+
+
+def _parse_multi_select_filter(name: str) -> str:
+    values = []
+    seen: set[str] = set()
+    for raw_value in request.args.getlist(name):
+        for item in raw_value.split(","):
+            value = item.strip().upper()
+            if value and value not in seen:
+                values.append(value)
+                seen.add(value)
+    return ",".join(values)
+
+
+def _split_multi_filter(value: str) -> list[str]:
+    return [item.strip().upper() for item in (value or "").split(",") if item.strip()]
+
+
+COUNTY_OPTIONS = ("ALAMEDA", "CONTRA COSTA", "MARIN")
+
+_MARIN_CITIES = {
+    "BELVEDERE",
+    "BELVEDERE TIBURON",
+    "CORTE MADERA",
+    "FAIRFAX",
+    "GREENBRAE",
+    "KENTFIELD",
+    "LARKSPUR",
+    "MARIN CITY",
+    "MILL VALLEY",
+    "NOVATO",
+    "ROSS",
+    "SAN ANSELMO",
+    "SAN RAFAEL",
+    "SAUSALITO",
+    "TIBURON",
+}
+
+_CONTRA_COSTA_CITIES = {
+    "ALAMO",
+    "ANTIOCH",
+    "BAY POINT",
+    "BETHEL ISLAND",
+    "BRENTWOOD",
+    "BYRON",
+    "CLAYTON",
+    "CLYDE",
+    "CONCORD",
+    "CROCKETT",
+    "DANVILLE",
+    "DIABLO",
+    "DISCOVERY BAY",
+    "EL CERRITO",
+    "EL SOBRANTE",
+    "HERCULES",
+    "KENSINGTON",
+    "KNIGHTSEN",
+    "LAFAYETTE",
+    "MARTINEZ",
+    "MORAGA",
+    "OAKLEY",
+    "ORINDA",
+    "PACHECO",
+    "PINOLE",
+    "PITTSBURG",
+    "PLEASANT HILL",
+    "PORT COSTA",
+    "RICHMOND",
+    "RODEO",
+    "SAN PABLO",
+    "SAN RAMON",
+    "WALNUT CREEK",
+}
+
+
+def _normalize_county_filter(value: str) -> str:
+    value = (value or "").strip().upper().replace("-", " ")
+    value = " ".join(value.split())
+    return value if value in COUNTY_OPTIONS else ""
+
+
+def _parse_county_filter() -> str:
+    return _normalize_county_filter(request.args.get("county") or "")
+
+
+def _infer_county(row: dict[str, Any], parcel: dict[str, Any] | None = None) -> str:
+    parcel = parcel or {}
+    city = str(row.get("city") or parcel.get("SitusCity") or "").strip().lstrip("_ .,").upper()
+    bill_url = str(row.get("bill_url") or "").lower()
+    raw_text = str(row.get("raw_text") or "").lower()
+
+    if city in _MARIN_CITIES or "TIBUR" in city or "marincounty" in bill_url or "marin_taxbillonline" in raw_text:
+        return "MARIN"
+    if city in _CONTRA_COSTA_CITIES or "cccttc" in bill_url:
+        return "CONTRA COSTA"
+    if city or "alamedacounty" in bill_url:
+        return "ALAMEDA"
+    return ""
+
+
+def _filter_rows_by_county(rows: list[dict], county_filter: str) -> list[dict]:
+    if not county_filter:
+        return rows
+    return [
+        row
+        for row in rows
+        if _infer_county(row, parse_row_json(row.get("row_json"))) == county_filter
+    ]
 
 
 @app.errorhandler(RuntimeError)
@@ -390,9 +498,11 @@ def search_page():
     q = (request.args.get("q") or "").strip()
     zip_list = request.args.getlist("zip")
     zip_filter = ",".join(item.strip() for sub in zip_list for item in sub.split(",") if item.strip())
+    list_id_raw = (request.args.get("list_id") or "").strip()
     power_filter = (request.args.get("power") or "").strip()
     fav_filter = (request.args.get("fav") or "").strip()
     city_filter = (request.args.get("city") or "").strip().upper()
+    county_filter = _parse_county_filter()
     vpt_filter = (request.args.get("vpt") or "").strip()
     delinquent_filter = (request.args.get("delinquent") or "").strip()
     condition_filter = (request.args.get("condition") or "").strip()
@@ -432,7 +542,27 @@ def search_page():
         sort = "location_of_property"
     order = "desc" if order.lower() == "desc" else "asc"
 
+    selected_list_id: int | None = None
+    selected_list: dict[str, Any] | None = None
+    selected_list_apns: set[str] = set()
+    if list_id_raw:
+        try:
+            selected_list_id = int(list_id_raw)
+        except (TypeError, ValueError):
+            selected_list_id = None
+        if selected_list_id is not None:
+            selected_list = db.get_list(selected_list_id)
+            if selected_list:
+                selected_list_apns = {
+                    str(row.get("apn") or "").strip()
+                    for row in db.get_list_properties(selected_list_id)
+                    if row.get("apn")
+                }
+
     favorites_set = set(db.get_favorites_apns())
+    needs_route_filter = bool(selected_list)
+    query_page = 1 if county_filter or needs_route_filter else page
+    query_page_size = 0 if county_filter or needs_route_filter else page_size
     rows, total = db.get_bills_with_parcels_filtered(
         q=q,
         zip_filter=zip_filter,
@@ -447,15 +577,27 @@ def search_page():
         owner_name_filter=owner_name_filter,
         sort=sort,
         order=order,
-        page=page,
-        page_size=page_size,
+        page=query_page,
+        page_size=query_page_size,
     )
+
+    if county_filter:
+        rows = _filter_rows_by_county(rows, county_filter)
+        total = len(rows)
+
+    if needs_route_filter:
+        rows = [r for r in rows if str(r.get("apn") or "").strip() in selected_list_apns]
+        total = len(rows)
 
     # Post-filter by outreach stage if requested
     if outreach_stage_filter:
         stage_val = outreach_stage_filter.lower().replace(" ", "_")
         rows = [r for r in rows if (r.get("outreach_stage") or "identified") == stage_val]
         total = len(rows)
+
+    if county_filter or needs_route_filter:
+        start = (page - 1) * page_size
+        rows = rows[start : start + page_size]
 
     # Build display rows with some parcel fields pulled from JSON
     display = []
@@ -508,6 +650,7 @@ def search_page():
                 "outreach_score": r.get("outreach_score"),
                 "outreach_stage": r.get("outreach_stage") or "",
                 "owner_name": r.get("owner_name") or "",
+                "in_selected_list": apn in selected_list_apns,
             }
         )
 
@@ -524,6 +667,7 @@ def search_page():
         power_filter=power_filter,
         fav_filter=fav_filter,
         city_filter=city_filter,
+        county_filter=county_filter,
         vpt_filter=vpt_filter,
         delinquent_filter=delinquent_filter,
         condition_filter=condition_filter,
@@ -535,6 +679,8 @@ def search_page():
         deceased_count_filter=deceased_count_filter,
         outreach_stage_filter=outreach_stage_filter,
         owner_name_filter=owner_name_filter,
+        list_id=selected_list_id,
+        selected_list=selected_list,
         sort=sort,
         order=order,
         page=page,
@@ -542,6 +688,8 @@ def search_page():
         total=total,
         total_pages=total_pages,
         available_zips=db.get_distinct_zips(),
+        available_counties=COUNTY_OPTIONS,
+        route_lists=db.get_lists(),
     )
 
 
@@ -552,9 +700,12 @@ def gallery_page():
     q = (request.args.get("q") or "").strip()
     zip_list = request.args.getlist("zip")
     zip_filter = ",".join(item.strip() for sub in zip_list for item in sub.split(",") if item.strip())
+    list_id_raw = (request.args.get("list_id") or "").strip()
     power_filter = (request.args.get("power") or "").strip()
     fav_filter = (request.args.get("fav") or "").strip()
-    city_filter = (request.args.get("city") or "").strip().upper()
+    city_filter = _parse_multi_select_filter("city")
+    selected_cities = _split_multi_filter(city_filter)
+    county_filter = _parse_county_filter()
     vpt_filter = (request.args.get("vpt") or "").strip()
     delinquent_filter = (request.args.get("delinquent") or "").strip()
     condition_filter = (request.args.get("condition") or "").strip()
@@ -581,13 +732,35 @@ def gallery_page():
         sort = "location_of_property"
     order = "desc" if order.lower() == "desc" else "asc"
 
+    selected_list_id: int | None = None
+    selected_list: dict[str, Any] | None = None
+    selected_list_apns: set[str] = set()
+    if list_id_raw:
+        try:
+            selected_list_id = int(list_id_raw)
+        except (TypeError, ValueError):
+            selected_list_id = None
+        if selected_list_id is not None:
+            selected_list = db.get_list(selected_list_id)
+            if selected_list:
+                selected_list_apns = {
+                    str(row.get("apn") or "").strip()
+                    for row in db.get_list_properties(selected_list_id)
+                    if row.get("apn")
+                }
+
     favorites_set = set(db.get_favorites_apns())
+    db_city_filter = city_filter if len(selected_cities) <= 1 else ""
+    needs_route_filter = bool(selected_list)
+    needs_post_filter = bool(county_filter) or len(selected_cities) > 1 or needs_route_filter
+    query_page = 1 if needs_post_filter else page
+    query_page_size = 0 if needs_post_filter else page_size
     rows, total = db.get_bills_with_parcels_filtered(
         q=q,
         zip_filter=zip_filter,
         power_filter=power_filter,
         fav_filter=fav_filter,
-        city_filter=city_filter,
+        city_filter=db_city_filter,
         vpt_filter=vpt_filter,
         delinquent_filter=delinquent_filter,
         condition_filter=condition_filter,
@@ -596,9 +769,29 @@ def gallery_page():
         owner_name_filter=owner_name_filter,
         sort=sort,
         order=order,
-        page=page,
-        page_size=page_size,
+        page=query_page,
+        page_size=query_page_size,
     )
+
+    if county_filter:
+        rows = _filter_rows_by_county(rows, county_filter)
+        total = len(rows)
+
+    if len(selected_cities) > 1:
+        selected_city_set = set(selected_cities)
+        rows = [
+            r for r in rows
+            if str(r.get("city") or parse_row_json(r.get("row_json")).get("SitusCity") or "").strip().upper() in selected_city_set
+        ]
+        total = len(rows)
+
+    if needs_route_filter:
+        rows = [r for r in rows if str(r.get("apn") or "").strip() in selected_list_apns]
+        total = len(rows)
+
+    if needs_post_filter:
+        start = (page - 1) * page_size
+        rows = rows[start : start + page_size]
 
     if outreach_stage_filter:
         stage_val = outreach_stage_filter.lower().replace(" ", "_")
@@ -628,6 +821,7 @@ def gallery_page():
                 "outreach_stage": r.get("outreach_stage") or "",
                 "deceased_count": r.get("deceased_count"),
                 "prop_occupancy_type": r.get("prop_occupancy_type") or "",
+                "in_selected_list": apn in selected_list_apns,
                 "maps_url": (
                     f"https://www.google.com/maps/search/?api=1&query="
                     f"{quote_plus(r['location_of_property'] or '')}"
@@ -650,6 +844,7 @@ def gallery_page():
         power_filter=power_filter,
         fav_filter=fav_filter,
         city_filter=city_filter,
+        county_filter=county_filter,
         vpt_filter=vpt_filter,
         delinquent_filter=delinquent_filter,
         condition_filter=condition_filter,
@@ -661,6 +856,8 @@ def gallery_page():
         deceased_count_filter=deceased_count_filter,
         outreach_stage_filter=outreach_stage_filter,
         owner_name_filter=owner_name_filter,
+        list_id=selected_list_id,
+        selected_list=selected_list,
         sort=sort,
         order=order,
         page=page,
@@ -668,6 +865,9 @@ def gallery_page():
         total=total,
         total_pages=total_pages,
         available_zips=db.get_distinct_zips(),
+        available_cities=db.get_distinct_cities(),
+        available_counties=COUNTY_OPTIONS,
+        route_lists=db.get_lists(),
     )
 
 
@@ -681,6 +881,7 @@ def api_apn_list():
     power_filter = (request.args.get("power") or "").strip()
     fav_filter = (request.args.get("fav") or "").strip()
     city_filter = (request.args.get("city") or "").strip().upper()
+    county_filter = _parse_county_filter()
     vpt_filter = (request.args.get("vpt") or "").strip()
     delinquent_filter = (request.args.get("delinquent") or "").strip()
     condition_filter = (request.args.get("condition") or "").strip()
@@ -718,6 +919,9 @@ def api_apn_list():
         page=1,
         page_size=0,  # 0 = unlimited
     )
+
+    if county_filter:
+        rows = _filter_rows_by_county(rows, county_filter)
 
     if outreach_stage_filter:
         stage_val = outreach_stage_filter.lower().replace(" ", "_")
@@ -892,7 +1096,20 @@ def property_condition_report(apn: str):
 @login_required
 def map_view():
     """Render the map view page."""
-    return render_template("map.html", available_zips=db.get_distinct_zips(), active_nav="search")
+    list_id_raw = (request.args.get("list_id") or "").strip()
+    active_list_id: int | None = None
+    if list_id_raw:
+        try:
+            active_list_id = int(list_id_raw)
+        except (TypeError, ValueError):
+            active_list_id = None
+    return render_template(
+        "map.html",
+        available_zips=db.get_distinct_zips(),
+        route_lists=db.get_lists(),
+        active_list_id=active_list_id,
+        active_nav="search",
+    )
 
 
 def _extract_zip_code(value: str) -> str:
@@ -1033,6 +1250,10 @@ def _get_list_map_rows(list_id: int) -> list[dict[str, Any]]:
             continue
         row = dict(bill)
         row["row_json"] = parcel_json_by_apn.get(apn)
+        row["sort_order"] = next(
+            (entry.get("sort_order") for entry in (list_properties.data or []) if str(entry.get("apn") or "").strip() == apn),
+            None,
+        )
         rows.append(row)
     return rows
 
@@ -1140,6 +1361,7 @@ def api_markers():
             "lat": lat,
             "lng": lng,
             "apn": apn,
+            "sort_order": r.get("sort_order"),
             "parcel_number": r["parcel_number"] or "",
             "tracer_number": r["tracer_number"] or "",
             "location": location,
@@ -1160,6 +1382,7 @@ def api_markers():
             "streetview_url": f"https://www.google.com/maps/@?api=1&map_action=pano&viewpoint={lat},{lng}" if lat and lng else "",
             "condition_score": r["condition_score"],
             "owner_name": r.get("owner_name") or "",
+            "in_route": bool(list_id_raw),
         })
 
     has_more = (int(page) * int(page_size)) < int(total)
@@ -1239,7 +1462,7 @@ def api_property_bulk_delete():
     apns = data.get("apns", [])
     if not apns or not isinstance(apns, list):
         return jsonify({"status": "error", "message": "apns list is required"}), 400
-    cleaned = [a for a in (_clean_apn(str(x)) for x in apns) if a]
+    cleaned = [a for a in (_clean_apn(str(x)) for x in apns if x is not None) if a]
     if not cleaned:
         return jsonify({"status": "error", "message": "No valid APNs provided"}), 400
     count = db.bulk_delete_bills(cleaned)
@@ -1254,7 +1477,7 @@ def api_favorites_bulk_add():
     apns = data.get("apns", [])
     if not apns or not isinstance(apns, list):
         return jsonify({"status": "error", "message": "apns list is required"}), 400
-    cleaned = [a for a in (_clean_apn(str(x)) for x in apns) if a]
+    cleaned = [a for a in (_clean_apn(str(x)) for x in apns if x is not None) if a]
     if not cleaned:
         return jsonify({"status": "error", "message": "No valid APNs provided"}), 400
     count = db.bulk_add_favorites(cleaned)
@@ -1668,6 +1891,63 @@ def api_research_start_all():
         return jsonify({"status": "error", "message": str(e)})
 
 
+@app.route("/api/research/start-batch", methods=["POST"])
+@login_required
+def api_research_start_batch():
+    """Start deep research for a limited page of bills missing research (for cron / OpenClaw)."""
+    try:
+        import scanner.gemini_research_scanner as gemini_research_scanner
+
+        gemini_research_scanner.ensure_research_columns()
+
+        if not gemini_research_scanner.GOOGLE_API_KEY:
+            return jsonify({"status": "error", "message": "GOOGLE_API_KEY not configured in .env"})
+
+        data = request.get_json() or {}
+        limit = int(data.get("limit", 25))
+        offset = int(data.get("offset", 0))
+        limit = max(0, min(limit, 500))
+        offset = max(0, offset)
+
+        total_pending = db.count_bills_missing_research()
+
+        if limit == 0:
+            return jsonify({
+                "status": "ok",
+                "started": 0,
+                "apns": [],
+                "remaining_estimate": max(0, total_pending - offset),
+            })
+
+        apns = db.get_bills_missing_research(limit=limit, offset=offset)
+        if not apns:
+            return jsonify({
+                "status": "ok",
+                "started": 0,
+                "apns": [],
+                "remaining_estimate": max(0, total_pending - offset),
+            })
+
+        success = gemini_research_scanner.start_research(apns)
+        remaining_estimate = max(0, total_pending - offset - len(apns))
+        if success:
+            return jsonify({
+                "status": "ok",
+                "started": len(apns),
+                "apns": apns,
+                "remaining_estimate": remaining_estimate,
+            })
+        return jsonify({
+            "status": "error",
+            "message": "Failed to start research",
+            "started": 0,
+            "apns": apns,
+            "remaining_estimate": remaining_estimate,
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+
+
 @app.route("/api/enrichment/status")
 @login_required
 def api_enrichment_status():
@@ -1827,6 +2107,82 @@ def api_contact_result(apn: str):
 STREETVIEW_DIR = BASE_DIR / "streetview_images"
 
 
+def _streetview_location_for_bill(row: dict[str, Any] | None, apn: str) -> str:
+    if not row:
+        return ""
+    parcel = parse_row_json(row.get("row_json"))
+    location = str(row.get("location_of_property") or parcel.get("SitusAddress") or "").strip()
+    city = str(row.get("city") or parcel.get("SitusCity") or "").strip().lstrip("_ ")
+    if not location:
+        return ""
+
+    parts = [location]
+    location_upper = location.upper()
+    if city and city.upper() not in location_upper:
+        parts.append(city)
+    if " CA" not in location_upper and "CALIFORNIA" not in location_upper:
+        parts.append("CA")
+    return ", ".join(parts)
+
+
+def _fetch_google_streetview_image(location: str) -> Response | None:
+    maps_api_key = os.environ.get("MAPS_API_KEY", "").strip()
+    if not maps_api_key or not location:
+        return None
+
+    try:
+        # pyre-ignore[21]
+        import requests
+
+        upstream = requests.get(
+            "https://maps.googleapis.com/maps/api/streetview",
+            params={
+                "size": "640x360",
+                "location": location,
+                "source": "outdoor",
+                "return_error_code": "true",
+                "key": maps_api_key,
+            },
+            timeout=8,
+        )
+    except Exception:
+        return None
+
+    content_type = upstream.headers.get("Content-Type", "image/jpeg").split(";", 1)[0].strip()
+    if upstream.status_code != 200 or not content_type.startswith("image/") or not upstream.content:
+        return None
+
+    return Response(
+        upstream.content,
+        mimetype=content_type,
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
+
+
+def _signed_streetview_storage_url(safe_apn: str) -> str:
+    bucket_name = os.environ.get("STREETVIEW_STORAGE_BUCKET", "").strip()
+    if not bucket_name:
+        return ""
+
+    object_path = f"{safe_apn}.jpg"
+    try:
+        bucket = db.get_client().storage.from_(bucket_name)
+        if not bucket.exists(object_path):
+            return ""
+        signed = bucket.create_signed_url(object_path, 86400)
+    except Exception:
+        return ""
+
+    if isinstance(signed, dict):
+        return str(signed.get("signedURL") or signed.get("signed_url") or signed.get("signedUrl") or "")
+    return str(
+        getattr(signed, "signed_url", "")
+        or getattr(signed, "signedURL", "")
+        or getattr(signed, "signedUrl", "")
+        or ""
+    )
+
+
 @app.route("/api/condition/status")
 @login_required
 def api_condition_status():
@@ -1946,8 +2302,17 @@ def api_streetview_image(apn: str):
     
     if image_path.exists():
         return send_from_directory(STREETVIEW_DIR, f"{safe_apn}.jpg", mimetype="image/jpeg")
-    else:
-        return jsonify({"error": "Image not found"}), 404
+
+    storage_url = _signed_streetview_storage_url(safe_apn)
+    if storage_url:
+        return redirect(storage_url)
+
+    location = _streetview_location_for_bill(db.get_bill_with_parcel(apn), apn)
+    streetview_response = _fetch_google_streetview_image(location)
+    if streetview_response:
+        return streetview_response
+
+    return jsonify({"error": "Image not found"}), 404
 
 
 # ============================================================================
@@ -2060,16 +2425,20 @@ def _remove_legacy_favorites_lists() -> int:
 
 
 def _build_property_summary(apn: str, row: dict[str, Any], parcel: dict[str, Any]) -> dict[str, Any]:
-    try:
-        x = float(parcel.get("CENTROID_X") or parcel.get("X_CORD") or parcel.get("x") or 0)
-        y = float(parcel.get("CENTROID_Y") or parcel.get("Y_CORD") or parcel.get("y") or 0)
-    except (ValueError, TypeError):
-        x, y = 0, 0
+    lat = row.get("lat") or row.get("latitude")
+    lng = row.get("lng") or row.get("longitude")
+    if lat is None or lng is None:
+        try:
+            x = float(parcel.get("CENTROID_X") or parcel.get("X_CORD") or parcel.get("x") or 0)
+            y = float(parcel.get("CENTROID_Y") or parcel.get("Y_CORD") or parcel.get("y") or 0)
+        except (ValueError, TypeError):
+            x, y = 0, 0
+        if x != 0 and y != 0:
+            lat, lng = web_mercator_to_latlng(x, y)
+        else:
+            lat, lng = None, None
 
-    if x != 0 and y != 0:
-        lat, lng = web_mercator_to_latlng(x, y)
-    else:
-        lat, lng = None, None
+    is_favorite = db.has_favorite(apn)
 
     return {
         "apn": apn,
@@ -2079,6 +2448,21 @@ def _build_property_summary(apn: str, row: dict[str, Any], parcel: dict[str, Any
         "condition_score": row.get("condition_score"),
         "latitude": lat,
         "longitude": lng,
+        "queue_position": row.get("queue_position"),
+        "sort_order": row.get("sort_order"),
+        "streetview_image_path": row.get("streetview_image_path") or "",
+        "power_status": (row.get("power_status") or "").upper(),
+        "is_favorite": is_favorite,
+        "badges": [
+            badge
+            for badge in [
+                "VPT" if row.get("has_vpt") == 1 else "",
+                "Favorite" if is_favorite else "",
+                "Delinquent" if row.get("delinquent") == 1 else "",
+                f"Power {(row.get('power_status') or '').upper()}" if row.get("power_status") else "",
+            ]
+            if badge
+        ],
     }
 
 
@@ -2098,7 +2482,11 @@ def _chunked_in_query(table: str, select_fields: str, key: str, values: list[str
 def lists_page():
     """Lists management page."""
     ensure_lists_tables()
-    return render_template("lists.html", active_nav="search")
+    return render_template(
+        "lists.html",
+        active_nav="search",
+        route_lists=db.get_lists(),
+    )
 
 
 @app.route("/api/lists", methods=["GET"])
@@ -2150,8 +2538,9 @@ def api_lists_get_one(list_id: int):
     if not lst:
         return jsonify({"error": "List not found"}), 404
     
+    ordered_properties = db.get_list_properties(list_id)
     properties = []
-    for prop in db.get_list_properties(list_id):
+    for prop in ordered_properties:
         parcel = parse_row_json(prop.get("row_json"))
         properties.append(_build_property_summary(prop["apn"], prop, parcel))
     
@@ -2160,7 +2549,8 @@ def api_lists_get_one(list_id: int):
         "name": lst["name"],
         "description": lst.get("description"),
         "created_at": lst.get("created_at"),
-        "properties": properties
+        "properties": properties,
+        "route_preview": db.get_list_route_preview(list_id),
     })
 
 
@@ -2234,24 +2624,49 @@ def api_lists_add_properties(list_id: int):
             return jsonify({"success": False, "error": "List not found"}), 404
         
         if apns == "all" and filters:
-            added = db.add_properties_to_list_from_filter(
-                list_id,
-                q=filters.get("q", ""),
-                zip_filter=filters.get("zip", ""),
-                power_filter=filters.get("power", ""),
-                city_filter=(filters.get("city") or "").upper(),
-                vpt_filter=filters.get("vpt", ""),
-                delinquent_filter=filters.get("delinquent", ""),
-                condition_filter=filters.get("condition", ""),
-                outofstate_filter=filters.get("outofstate", ""),
-                research_filter=filters.get("research", ""),
-                owner_name_filter=filters.get("owner_name", ""),
-                occupancy_filter=filters.get("occupancy_type", ""),
-                ownership_filter=filters.get("ownership_type", ""),
-                primary_resident_age_filter=filters.get("primary_resident_age", ""),
-                deceased_count_filter=filters.get("deceased_count", ""),
-                limit=0,
-            )
+            county_filter = _normalize_county_filter(str(filters.get("county") or ""))
+            if county_filter:
+                rows, _ = db.get_bills_with_parcels_filtered(
+                    q=filters.get("q", ""),
+                    zip_filter=filters.get("zip", ""),
+                    power_filter=filters.get("power", ""),
+                    city_filter=(filters.get("city") or "").upper(),
+                    vpt_filter=filters.get("vpt", ""),
+                    delinquent_filter=filters.get("delinquent", ""),
+                    condition_filter=filters.get("condition", ""),
+                    outofstate_filter=filters.get("outofstate", ""),
+                    research_filter=filters.get("research", ""),
+                    owner_name_filter=filters.get("owner_name", ""),
+                    occupancy_filter=filters.get("occupancy_type", ""),
+                    ownership_filter=filters.get("ownership_type", ""),
+                    primary_resident_age_filter=filters.get("primary_resident_age", ""),
+                    deceased_count_filter=filters.get("deceased_count", ""),
+                    page=1,
+                    page_size=0,
+                )
+                added = db.add_properties_to_list(
+                    list_id,
+                    [str(row.get("apn")) for row in _filter_rows_by_county(rows, county_filter) if row.get("apn")],
+                )
+            else:
+                added = db.add_properties_to_list_from_filter(
+                    list_id,
+                    q=filters.get("q", ""),
+                    zip_filter=filters.get("zip", ""),
+                    power_filter=filters.get("power", ""),
+                    city_filter=(filters.get("city") or "").upper(),
+                    vpt_filter=filters.get("vpt", ""),
+                    delinquent_filter=filters.get("delinquent", ""),
+                    condition_filter=filters.get("condition", ""),
+                    outofstate_filter=filters.get("outofstate", ""),
+                    research_filter=filters.get("research", ""),
+                    owner_name_filter=filters.get("owner_name", ""),
+                    occupancy_filter=filters.get("occupancy_type", ""),
+                    ownership_filter=filters.get("ownership_type", ""),
+                    primary_resident_age_filter=filters.get("primary_resident_age", ""),
+                    deceased_count_filter=filters.get("deceased_count", ""),
+                    limit=0,
+                )
         else:
             added = db.add_properties_to_list(list_id, list(apns) if isinstance(apns, list) else [])
         return jsonify({"success": True, "count": added})
@@ -2261,6 +2676,24 @@ def api_lists_add_properties(list_id: int):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/lists/<int:list_id>/reorder", methods=["POST"])
+@login_required
+def api_lists_reorder(list_id: int):
+    """Reorder properties in a list by APN sequence."""
+    ensure_lists_tables()
+    data = cast(dict[str, Any], request.get_json() or {})
+    apns = data.get("apns", [])
+    if not isinstance(apns, list):
+        return jsonify({"success": False, "error": "apns list is required"}), 400
+    if not db.get_list(list_id):
+        return jsonify({"success": False, "error": "List not found"}), 404
+    cleaned = [a for a in (_clean_apn(str(x)) for x in apns if x is not None) if a]
+    if not cleaned:
+        return jsonify({"success": True, "count": 0})
+    count = db.reorder_list_properties(list_id, cleaned)
+    return jsonify({"success": True, "count": count})
+
+
 @app.route("/api/lists/<int:list_id>/remove-property/<apn>", methods=["DELETE"])
 @login_required
 def api_lists_remove_property(list_id: int, apn: str):
@@ -2268,6 +2701,16 @@ def api_lists_remove_property(list_id: int, apn: str):
     ensure_lists_tables()
     deleted = db.remove_property_from_list(list_id, apn)
     return jsonify({"success": deleted})
+
+
+@app.route("/api/lists/<int:list_id>/route-preview", methods=["GET"])
+@login_required
+def api_lists_route_preview(list_id: int):
+    """Return the ordered route preview for a list."""
+    ensure_lists_tables()
+    if not db.get_list(list_id):
+        return jsonify({"error": "List not found"}), 404
+    return jsonify(db.get_list_route_preview(list_id))
 
 
 @app.route("/api/lists/<int:list_id>/route", methods=["GET"])

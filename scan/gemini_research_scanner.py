@@ -570,9 +570,84 @@ You must prioritize the following three objectives above all else:
 - **Detailed Findings**: Organize remaining data clearly by section.
 - **Sources**: Explicitly cite the URLs used, especially if you found contact info.
 - **Confidence**: Mark low-confidence findings clearly.
+
+## Machine-readable summary (required)
+After all narrative sections and scores, output **one** fenced code block with the language tag `json`.
+The fence must contain **only** a single JSON object with exactly these keys (no extra keys, no markdown inside the fence):
+- `vacancy_verdict`: one of the strings `likely_vacant`, `likely_occupied`, `unknown`
+- `vacancy_confidence`: a number from 0 to 1 (inclusive)
+- `vacancy_rationale`: a concise evidence string (500 characters or fewer)
 """
 
     return prompt
+
+
+_ALLOWED_VACANCY_VERDICTS = frozenset({"likely_vacant", "likely_occupied", "unknown"})
+
+
+def _normalize_vacancy_verdict(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    s = str(raw).strip().lower().replace(" ", "_").replace("-", "_")
+    if s in _ALLOWED_VACANCY_VERDICTS:
+        return s
+    if "likely" in s and "vacant" in s and "occupied" not in s:
+        return "likely_vacant"
+    if "likely" in s and "occupied" in s:
+        return "likely_occupied"
+    if "unknown" in s:
+        return "unknown"
+    if "vacant" in s and "occupied" not in s:
+        return "likely_vacant"
+    if "occupied" in s:
+        return "likely_occupied"
+    return None
+
+
+def _parse_ai_vacancy_from_gemini_text(text: str) -> dict[str, Any] | None:
+    """Extract vacancy_verdict JSON from a ```json ... ``` block in the model output."""
+    if not (text or "").strip():
+        return None
+    m = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text, re.IGNORECASE)
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(1))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    verdict = _normalize_vacancy_verdict(data.get("vacancy_verdict") or data.get("verdict"))
+    if not verdict:
+        return None
+    conf: float | None = None
+    conf_raw = data.get("vacancy_confidence")
+    if conf_raw is not None and conf_raw != "":
+        try:
+            conf = max(0.0, min(1.0, float(conf_raw)))
+        except (TypeError, ValueError):
+            pass
+    rationale_raw = data.get("vacancy_rationale") or data.get("rationale") or ""
+    rationale = str(rationale_raw).strip()[:2000]
+    out: dict[str, Any] = {"verdict": verdict, "rationale": rationale}
+    if conf is not None:
+        out["confidence"] = conf
+    return out
+
+
+def _apply_ai_vacancy_from_response(apn: str, gemini_body: str) -> None:
+    parsed = _parse_ai_vacancy_from_gemini_text(gemini_body)
+    if not parsed:
+        return
+    try:
+        db.update_bill_ai_vacancy(
+            apn,
+            verdict=parsed["verdict"],
+            confidence=parsed.get("confidence"),
+            rationale=(parsed.get("rationale") or None) or None,
+        )
+    except Exception as e:
+        print(f"  Note: could not save AI vacancy fields for {apn}: {e}")
 
 
 def _require_cbc_prefetch(
@@ -658,7 +733,9 @@ async def research_property(apn: str) -> tuple[bool, str]:
         
         if not response or not response.text:
             return False, "Empty response from Gemini"
-        
+
+        _apply_ai_vacancy_from_response(apn, response.text)
+
         # Build the report
         address = prop_info.get("location_of_property", apn)
         report = f"""# Property Research Report

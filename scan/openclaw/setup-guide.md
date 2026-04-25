@@ -256,6 +256,44 @@ Use the same secret value in both `BARN_WEBHOOK_SECRET` (OpenClaw) and `openclaw
 
 ---
 
+## Vacancy research automation (cron-only)
+
+BARN-scan can run **Gemini deep research** in **rate-limited batches** so OpenClaw (or any scheduler) triggers vacancy analysis without UI logins. Research still executes on the **BARN-scan host** (Playwright/CBC + `GOOGLE_API_KEY` in `scan/.env`).
+
+### Database
+
+Apply [`db_migrations/supa_migration_add_ai_vacancy_columns.sql`](../db_migrations/supa_migration_add_ai_vacancy_columns.sql) in the Supabase SQL Editor. Successful runs populate `bills.ai_vacancy_verdict`, `ai_vacancy_confidence`, `ai_vacancy_rationale`, and `ai_vacancy_updated_at` (additive; `has_vpt` from the tax scrape is unchanged).
+
+### API
+
+- `POST /api/research/start-batch` — JSON body: `{ "limit": 25, "offset": 0 }` (defaults: `limit` 25, `offset` 0; `limit` capped at 500).
+- Auth: same as other research routes — Supabase **Bearer** JWT **or** `X-API-Key: <SCOUT_API_KEY>` (set in BARN-scan environment / `scan/.env`).
+- Response: `{ "status", "started", "apns", "remaining_estimate" }`.
+
+### Helper script
+
+From the `scan/` directory:
+
+```bash
+chmod +x scripts/openclaw_research_batch.sh
+export BARN_SCAN_URL=http://127.0.0.1:5000
+export SCOUT_API_KEY=your-scout-api-key
+./scripts/openclaw_research_batch.sh 25 0
+```
+
+### OpenClaw cron
+
+Schedule the script or an equivalent `curl` from the OpenClaw host (must reach `BARN_SCAN_URL`). Example:
+
+```bash
+openclaw cron add --name "barn-research-batch" --schedule "0 2 * * *" --command \
+  'env BARN_SCAN_URL=http://scan-internal:5000 SCOUT_API_KEY=*** /path/to/barn/scan/scripts/openclaw_research_batch.sh 25 0'
+```
+
+Use your real URL, path, and secret; keep `SCOUT_API_KEY` out of git.
+
+---
+
 ## 6. Environment Variables Reference
 
 ### OpenClaw Gateway

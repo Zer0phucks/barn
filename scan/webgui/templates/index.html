@@ -521,6 +521,25 @@
       align-items: flex-start;
     }
   }
+
+  .route-toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin: 0 0 16px 0;
+  }
+
+  .route-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #e8f4fd;
+    color: #1565c0;
+    font-size: 11px;
+    font-weight: 700;
+  }
 </style>
 {% endblock %}
 
@@ -537,6 +556,7 @@
 {% block content %}
   <form class="controls" method="get" id="filter-form">
     <input type="text" name="q" placeholder="Search..." value="{{ q }}" />
+    <input type="hidden" name="list_id" value="{{ list_id or '' }}" />
     <details class="dropdown" style="position: relative; display: inline-block;">
       <summary class="zip-dropdown-summary">Select Zips</summary>
       <div class="dropdown-content zip-dropdown-panel">
@@ -549,6 +569,12 @@
       </div>
     </details>
     <input type="text" name="city" placeholder="City" value="{{ city_filter }}" style="width: 100px;" />
+    <select name="county">
+      <option value="" {% if not county_filter %}selected{% endif %}>All Counties</option>
+      {% for county in available_counties %}
+      <option value="{{ county }}" {% if county_filter==county %}selected{% endif %}>{{ county.title() }}</option>
+      {% endfor %}
+    </select>
     <input type="text" name="owner_name" placeholder="Owner Name" value="{{ owner_name_filter }}"
       style="width: 150px;" />
     <select name="power">
@@ -631,6 +657,23 @@
     <span class="muted">Total: {{ total }}</span>
   </form>
 
+  <div class="route-toolbar">
+    <strong>Route:</strong>
+    <select id="route-list-select">
+      <option value="">All routes</option>
+      {% for route in route_lists %}
+      <option value="{{ route.id }}" {% if list_id == route.id %}selected{% endif %}>{{ route.name }}</option>
+      {% endfor %}
+    </select>
+    <button type="button" class="btn-secondary" onclick="applyRouteFilter()">View Route</button>
+    <button type="button" class="btn-secondary" onclick="addVisiblePageToRoute()">Add Visible Page</button>
+    <button type="button" class="btn-secondary" onclick="openSelectedRouteMap()">Map</button>
+    <button type="button" class="btn-secondary" onclick="openSelectedRoute()">Open Route</button>
+    {% if selected_list %}
+    <span class="muted">Viewing {{ selected_list.name }}</span>
+    {% endif %}
+  </div>
+
   <div class="table-container">
     <table>
       <thead>
@@ -681,10 +724,18 @@
             <a href="{{ url_for('property_detail', apn=r.apn, return_to=return_to_path) }}" title="Open Property Workspace">
               {{ r.location_of_property }}
             </a>
+            {% if r.in_selected_list %}
+            <span class="route-badge">In route</span>
+            {% endif %}
             {% if r.property_search_url %}
             <div>
               <a href="{{ r.property_search_url }}" target="_blank" rel="noopener" title="Search Owner"
                 style="font-size: 12px;">Owner Search</a>
+            </div>
+            {% endif %}
+            {% if r.in_selected_list %}
+            <div style="margin-top: 4px;">
+              <span class="pill pill-active">In Selected Route</span>
             </div>
             {% endif %}
           </td>
@@ -763,11 +814,11 @@
   <div class="pager">
     {% if page > 1 %}
     <a
-      href="?q={{ q }}&zip={{ zip_filter }}&city={{ city_filter }}&owner_name={{ owner_name_filter }}&occupancy_type={{ occupancy_filter }}&ownership_type={{ ownership_filter }}&primary_resident_age={{ primary_resident_age_filter }}&deceased_count={{ deceased_count_filter }}&power={{ power_filter }}&vpt={{ vpt_filter }}&delinquent={{ delinquent_filter }}&condition={{ condition_filter }}&outofstate={{ outofstate_filter }}&research={{ research_filter }}&outreach_stage={{ outreach_stage_filter }}&sort={{ sort }}&order={{ order }}&page_size={{ page_size }}&page={{ page - 1 }}">Prev</a>
+      href="?q={{ q }}&zip={{ zip_filter }}&city={{ city_filter }}&county={{ county_filter }}&owner_name={{ owner_name_filter }}&occupancy_type={{ occupancy_filter }}&ownership_type={{ ownership_filter }}&primary_resident_age={{ primary_resident_age_filter }}&deceased_count={{ deceased_count_filter }}&power={{ power_filter }}&vpt={{ vpt_filter }}&delinquent={{ delinquent_filter }}&condition={{ condition_filter }}&outofstate={{ outofstate_filter }}&research={{ research_filter }}&outreach_stage={{ outreach_stage_filter }}&sort={{ sort }}&order={{ order }}&page_size={{ page_size }}&page={{ page - 1 }}">Prev</a>
     {% endif %}
     <span class="muted">Page {{ page }} of {{ total_pages }}</span>
     {% if page < total_pages %} <a
-      href="?q={{ q }}&zip={{ zip_filter }}&city={{ city_filter }}&owner_name={{ owner_name_filter }}&occupancy_type={{ occupancy_filter }}&ownership_type={{ ownership_filter }}&primary_resident_age={{ primary_resident_age_filter }}&deceased_count={{ deceased_count_filter }}&power={{ power_filter }}&vpt={{ vpt_filter }}&delinquent={{ delinquent_filter }}&condition={{ condition_filter }}&outofstate={{ outofstate_filter }}&research={{ research_filter }}&outreach_stage={{ outreach_stage_filter }}&sort={{ sort }}&order={{ order }}&page_size={{ page_size }}&page={{ page + 1 }}">
+      href="?q={{ q }}&zip={{ zip_filter }}&city={{ city_filter }}&county={{ county_filter }}&owner_name={{ owner_name_filter }}&occupancy_type={{ occupancy_filter }}&ownership_type={{ ownership_filter }}&primary_resident_age={{ primary_resident_age_filter }}&deceased_count={{ deceased_count_filter }}&power={{ power_filter }}&vpt={{ vpt_filter }}&delinquent={{ delinquent_filter }}&condition={{ condition_filter }}&outofstate={{ outofstate_filter }}&research={{ research_filter }}&outreach_stage={{ outreach_stage_filter }}&sort={{ sort }}&order={{ order }}&page_size={{ page_size }}&page={{ page + 1 }}">
       Next</a>
       {% endif %}
   </div>
@@ -987,6 +1038,77 @@
           });
       })
       .catch(err => alert("Error: " + err.message));
+  }
+
+  function getSelectedRouteId() {
+    const value = document.getElementById('route-list-select').value;
+    return value ? String(value) : '';
+  }
+
+  function applyRouteFilter() {
+    const params = new URLSearchParams(window.location.search);
+    const routeId = getSelectedRouteId();
+    if (routeId) {
+      params.set('list_id', routeId);
+    } else {
+      params.delete('list_id');
+    }
+    params.delete('page');
+    window.location.search = params.toString();
+  }
+
+  function openSelectedRouteMap() {
+    const routeId = getSelectedRouteId();
+    if (!routeId) {
+      alert('Select a route first.');
+      return;
+    }
+    window.location.href = `/map?list_id=${encodeURIComponent(routeId)}`;
+  }
+
+  function openSelectedRoute() {
+    const routeId = getSelectedRouteId();
+    if (!routeId) {
+      alert('Select a route first.');
+      return;
+    }
+    fetch(`/api/lists/${routeId}/route`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.url) {
+          window.open(data.url, '_blank');
+          return;
+        }
+        alert(data.error || 'Could not generate route.');
+      })
+      .catch(err => alert('Error generating route: ' + err.message));
+  }
+
+  function addVisiblePageToRoute() {
+    const routeId = getSelectedRouteId();
+    if (!routeId) {
+      alert('Select a route first.');
+      return;
+    }
+    const apns = [...document.querySelectorAll('.row-checkbox')].map(cb => cb.dataset.apn).filter(Boolean);
+    if (apns.length === 0) {
+      alert('No visible properties to add.');
+      return;
+    }
+    fetch(`/api/lists/${routeId}/add-properties`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apns })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          alert(`Added ${data.count} properties to the route.`);
+          return;
+        }
+        alert(data.error || 'Could not add properties to the route.');
+      })
+      .catch(err => alert('Error adding visible properties: ' + err.message));
   }
 
   function clearAllFilters() {

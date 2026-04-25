@@ -43,8 +43,40 @@
         cursor: pointer;
     }
 
-    .create-form button:hover {
-        background: #219a52;
+.create-form button:hover {
+    background: #219a52;
+}
+
+    .route-toolbar {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin: 0 0 20px 0;
+        align-items: center;
+        padding: 12px 16px;
+        background: #17172a;
+        border: 1px solid #2a2a4a;
+        border-radius: 8px;
+    }
+
+    .route-toolbar select,
+    .route-toolbar button {
+        padding: 8px 12px;
+        border-radius: 4px;
+        border: 1px solid #3a3a5a;
+        background: #222240;
+        color: #fff;
+    }
+
+    .route-toolbar button {
+        cursor: pointer;
+        background: #3498db;
+        border-color: #3498db;
+    }
+
+    .route-toolbar button.secondary {
+        background: #222240;
+        border-color: #3a3a5a;
     }
 
     .lists-grid {
@@ -211,6 +243,52 @@
         background: #f4f4f4;
     }
 
+    .route-preview {
+        margin-bottom: 12px;
+        padding: 12px 14px;
+        border-radius: 6px;
+        background: #f8f9fa;
+        color: #333;
+        font-size: 13px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .route-preview .preview-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: #e8f1fb;
+        color: #0a6a9a;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .queue-badges {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+    }
+
+    .queue-badge {
+        padding: 2px 6px;
+        border-radius: 999px;
+        background: #e8f1fb;
+        color: #0a6a9a;
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    .queue-actions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+
     .empty-state {
         text-align: center;
         padding: 40px;
@@ -260,6 +338,18 @@
     <button onclick="createList()">+ Create List</button>
 </div>
 
+<div class="route-toolbar">
+    <select id="route-list-select">
+        <option value="">Choose a route/list...</option>
+        {% for list in route_lists %}
+        <option value="{{ list.id }}">{{ list.name }} ({{ list.property_count }})</option>
+        {% endfor %}
+    </select>
+    <button type="button" onclick="openSelectedRoute()">Open Route</button>
+    <button type="button" class="secondary" onclick="openSelectedRoutePreview()">Preview Queue</button>
+    <button type="button" class="secondary" onclick="openSelectedListMap()">Map View</button>
+</div>
+
 <div class="lists-grid" id="lists-container">
     <p style="color: #666;">Loading lists...</p>
 </div>
@@ -272,15 +362,16 @@
             <button class="modal-close" onclick="closeModal()">&times;</button>
         </div>
         <div class="modal-body">
+            <div class="route-preview" id="route-preview-panel" style="display:none;"></div>
             <div class="table-container">
                 <table class="property-table">
                     <thead>
                         <tr>
+                            <th>#</th>
                             <th>Address</th>
                             <th>City</th>
                             <th>APN</th>
-                            <th>VPT</th>
-                            <th>Condition</th>
+                            <th>Badges</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -294,6 +385,9 @@
                 <span id="modal-count" style="color: #666;"></span>
             </div>
             <div>
+                <button class="btn btn-secondary" id="open-route-btn" onclick="openCurrentListRoute()">
+                    Open Google Route
+                </button>
                 <button class="btn btn-success" id="open-map-btn" onclick="openCurrentListMap()">
                     🗺️ Map
                 </button>
@@ -309,6 +403,8 @@
     let lists = [];
     let favoriteApns = [];
     let currentListId = null;
+    let currentListProperties = [];
+    let currentRoutePreview = null;
 
     document.addEventListener('DOMContentLoaded', loadLists);
 
@@ -446,6 +542,8 @@
 
     function openModalLoading() {
         document.getElementById('list-modal').classList.add('active');
+        document.getElementById('route-preview-panel').style.display = 'none';
+        document.getElementById('route-preview-panel').innerHTML = '';
         document.getElementById('modal-properties').innerHTML = '<tr><td colspan="6">Loading...</td></tr>';
     }
 
@@ -457,6 +555,14 @@
         }
     }
 
+    function setRouteButtonVisible(isVisible) {
+        const routeBtn = document.getElementById('open-route-btn');
+        routeBtn.style.display = isVisible ? 'inline-block' : 'none';
+        if (!isVisible) {
+            routeBtn.disabled = true;
+        }
+    }
+
     function formatConditionScore(value) {
         if (value === null || value === undefined || Number.isNaN(Number(value))) {
             return '-';
@@ -464,30 +570,68 @@
         return Number(value).toFixed(1);
     }
 
-    function renderModalRows(properties, actionLabel) {
+    function renderRoutePreview(routePreview) {
+        currentRoutePreview = routePreview;
+        const panel = document.getElementById('route-preview-panel');
+        if (!routePreview || !Array.isArray(routePreview.stops) || routePreview.stops.length === 0) {
+            panel.style.display = 'none';
+            panel.innerHTML = '';
+            return;
+        }
+        const sample = routePreview.stops.slice(0, 3).map((stop) => escapeHtml(stop.address || stop.apn)).join(' • ');
+        panel.style.display = 'flex';
+        panel.innerHTML = `
+            <span class="preview-pill">${routePreview.total} queued stops</span>
+            <span>${sample}</span>
+        `;
+    }
+
+    function renderModalRows(properties) {
+        currentListProperties = Array.isArray(properties) ? properties.slice() : [];
         if (!properties || properties.length === 0) {
             document.getElementById('modal-properties').innerHTML =
                 '<tr><td colspan="6" style="text-align: center; color: #666;">No properties in this view</td></tr>';
             return;
         }
-        document.getElementById('modal-properties').innerHTML = properties.map(p => `
+        const isRouteView = currentListId && currentListId !== FAVORITES_VIEW_ID;
+        document.getElementById('modal-properties').innerHTML = currentListProperties.map((p, index) => {
+            const badges = [];
+            if (p.has_vpt) badges.push('VPT');
+            if (p.streetview_image_path) badges.push('Streetview');
+            if (p.power_status) badges.push(`Power ${p.power_status}`);
+            if (p.badges && Array.isArray(p.badges)) {
+                p.badges.forEach((badge) => {
+                    if (badge && !badges.includes(badge)) badges.push(badge);
+                });
+            }
+            return `
           <tr>
+            <td>${isRouteView ? index + 1 : '-'}</td>
             <td>${escapeHtml(p.address || '-')}</td>
             <td>${escapeHtml(p.city || '-')}</td>
             <td>${escapeHtml(p.apn || '')}</td>
-            <td>${p.has_vpt ? 'Yes' : 'No'}</td>
-            <td>${formatConditionScore(p.condition_score)}</td>
+            <td><div class="queue-badges">${badges.map((badge) => `<span class="queue-badge">${escapeHtml(badge)}</span>`).join('')}</div></td>
             <td>
-              <button class="btn btn-secondary" onclick="removeFromCurrentView('${encodeURIComponent(p.apn || '')}')">${escapeHtml(actionLabel)}</button>
+              <div class="queue-actions">
+                ${isRouteView ? `
+                  <button class="btn btn-secondary" onclick="moveRouteItem('${escapeHtml(p.apn || '')}', -1)" ${index === 0 ? 'disabled' : ''}>↑</button>
+                  <button class="btn btn-secondary" onclick="moveRouteItem('${escapeHtml(p.apn || '')}', 1)" ${index === currentListProperties.length - 1 ? 'disabled' : ''}>↓</button>
+                ` : ''}
+                <button class="btn btn-secondary" onclick="navigateToStop('${escapeHtml(p.apn || '')}')">Navigate</button>
+                <button class="btn btn-secondary" onclick="removeFromCurrentView('${encodeURIComponent(p.apn || '')}')">${currentListId === FAVORITES_VIEW_ID ? 'Unfavorite' : 'Remove'}</button>
+              </div>
             </td>
           </tr>
-        `).join('');
+        `;
+        }).join('');
     }
 
     function viewList(id) {
         currentListId = id;
         openModalLoading();
         setMapButtonVisible(true);
+        setRouteButtonVisible(true);
+        document.getElementById('route-list-select').value = String(id);
 
         fetch(`/api/lists/${id}`)
             .then(res => res.json())
@@ -495,7 +639,8 @@
                 document.getElementById('modal-list-name').textContent = data.name;
                 document.getElementById('modal-count').textContent = `${data.properties.length} properties`;
                 document.getElementById('open-map-btn').disabled = data.properties.length === 0;
-                renderModalRows(data.properties || [], 'Remove');
+                renderModalRows(data.properties || []);
+                loadRoutePreview(id);
             })
             .catch(err => {
                 document.getElementById('modal-properties').innerHTML =
@@ -507,6 +652,7 @@
         currentListId = FAVORITES_VIEW_ID;
         openModalLoading();
         setMapButtonVisible(false);
+        setRouteButtonVisible(false);
 
         fetch('/api/favorites/details')
             .then(res => res.json())
@@ -514,7 +660,8 @@
                 const props = Array.isArray(data.properties) ? data.properties : [];
                 document.getElementById('modal-list-name').textContent = 'Favorites';
                 document.getElementById('modal-count').textContent = `${props.length} properties`;
-                renderModalRows(props, 'Unfavorite');
+                renderModalRows(props);
+                renderRoutePreview(null);
             })
             .catch(err => {
                 document.getElementById('modal-properties').innerHTML =
@@ -564,6 +711,74 @@
         openListMap(currentListId);
     }
 
+    function openCurrentListRoute() {
+        if (!currentListId || currentListId === FAVORITES_VIEW_ID) return;
+        generateRouteForList(currentListId);
+    }
+
+    function openSelectedRoute() {
+        const select = document.getElementById('route-list-select');
+        const listId = select.value;
+        if (!listId) return;
+        generateRouteForList(listId);
+    }
+
+    function openSelectedRoutePreview() {
+        const select = document.getElementById('route-list-select');
+        const listId = select.value;
+        if (!listId) return;
+        viewList(Number(listId));
+    }
+
+    function openSelectedListMap() {
+        const select = document.getElementById('route-list-select');
+        const listId = select.value;
+        if (!listId) return;
+        openListMap(listId);
+    }
+
+    function loadRoutePreview(listId) {
+        fetch(`/api/lists/${listId}/route-preview`)
+            .then(res => res.json())
+            .then(data => {
+                renderRoutePreview(data);
+                document.getElementById('open-route-btn').disabled = !data || !data.total;
+            })
+            .catch(() => renderRoutePreview(null));
+    }
+
+    function saveRouteOrder(listId, apns) {
+        return fetch(`/api/lists/${listId}/reorder`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ apns })
+        }).then(res => res.json());
+    }
+
+    function moveRouteItem(apn, direction) {
+        if (!currentListId || currentListId === FAVORITES_VIEW_ID) return;
+        const index = currentListProperties.findIndex((item) => item.apn === apn);
+        if (index < 0) return;
+        const nextIndex = index + direction;
+        if (nextIndex < 0 || nextIndex >= currentListProperties.length) return;
+
+        const reordered = currentListProperties.slice();
+        const [item] = reordered.splice(index, 1);
+        reordered.splice(nextIndex, 0, item);
+        currentListProperties = reordered;
+        renderModalRows(currentListProperties);
+        saveRouteOrder(currentListId, currentListProperties.map((item) => item.apn))
+            .then(() => loadRoutePreview(currentListId))
+            .catch((err) => alert('Error reordering route: ' + err.message));
+    }
+
+    function navigateToStop(apn) {
+        const item = currentListProperties.find((entry) => entry.apn === apn);
+        if (!item || !item.latitude || !item.longitude) return;
+        const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${item.latitude},${item.longitude}`)}`;
+        window.open(url, '_blank');
+    }
+
     function openListMap(listId) {
         if (!listId) return;
         window.location.href = `/map?list_id=${encodeURIComponent(String(listId))}`;
@@ -591,6 +806,12 @@
         div.textContent = text;
         return div.innerHTML;
     }
+
+    document.getElementById('route-list-select').addEventListener('change', function () {
+        const listId = this.value;
+        if (!listId) return;
+        currentListId = Number(listId);
+    });
 
     // Close modal on outside click
     document.getElementById('list-modal').addEventListener('click', function (e) {

@@ -36,6 +36,22 @@
   }
   .gallery-controls .btn-secondary:hover { background: var(--border); }
   .gallery-controls .muted { color: var(--text-muted); font-size: 13px; }
+  .route-toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin: 0 0 18px 0;
+  }
+  .route-chip {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(52, 152, 219, 0.15);
+    color: #79c6ff;
+    font-size: 11px;
+    font-weight: 700;
+  }
 
   .gallery-controls details { position: relative; display: inline-block; }
   .gallery-controls summary {
@@ -156,6 +172,7 @@
   .badge-power-on  { background: #27ae60; }
   .badge-deceased  { background: #8e44ad; }
   .badge-fav       { background: #f39c12; }
+  .badge-route     { background: #3498db; }
 
   .card-body {
     padding: 14px;
@@ -260,6 +277,12 @@
 {% block content %}
   <form class="gallery-controls" method="get" id="filter-form">
     <input type="text" name="q" placeholder="Search..." value="{{ q }}" />
+    <select name="list_id">
+      <option value="">All Lists</option>
+      {% for list in route_lists %}
+      <option value="{{ list.id }}" {% if list_id == list.id %}selected{% endif %}>{{ list.name }}</option>
+      {% endfor %}
+    </select>
     <details>
       <summary>Select Zips</summary>
       <div class="zip-panel">
@@ -271,7 +294,23 @@
         {% endfor %}
       </div>
     </details>
-    <input type="text" name="city" placeholder="City" value="{{ city_filter }}" style="width: 100px;" />
+    <details>
+      <summary>Select Cities</summary>
+      <div class="zip-panel">
+        {% for city in available_cities %}
+        <label>
+          <input type="checkbox" name="city" value="{{ city }}" {% if city in city_filter.split(',') %}checked{% endif %}>
+          {{ city }}
+        </label>
+        {% endfor %}
+      </div>
+    </details>
+    <select name="county">
+      <option value="" {% if not county_filter %}selected{% endif %}>All Counties</option>
+      {% for county in available_counties %}
+      <option value="{{ county }}" {% if county_filter==county %}selected{% endif %}>{{ county.title() }}</option>
+      {% endfor %}
+    </select>
     <input type="text" name="owner_name" placeholder="Owner Name" value="{{ owner_name_filter }}" style="width: 140px;" />
     <select name="power">
       <option value="" {% if not power_filter %}selected{% endif %}>All Power</option>
@@ -330,10 +369,27 @@
     <span class="muted">{{ total }} properties</span>
   </form>
 
+  <div class="route-toolbar">
+    <strong>Route:</strong>
+    <select id="route-list-select">
+      <option value="">All routes</option>
+      {% for route in route_lists %}
+      <option value="{{ route.id }}" {% if list_id == route.id %}selected{% endif %}>{{ route.name }}</option>
+      {% endfor %}
+    </select>
+    <button type="button" class="btn-secondary" onclick="applyRouteFilter()">View Route</button>
+    <button type="button" class="btn-secondary" onclick="addVisibleCardsToRoute()">Add Visible Cards</button>
+    <button type="button" class="btn-secondary" onclick="openSelectedRouteMap()">Map</button>
+    <button type="button" class="btn-secondary" onclick="openSelectedRoute()">Open Route</button>
+    {% if selected_list %}
+    <span class="muted">Viewing {{ selected_list.name }}</span>
+    {% endif %}
+  </div>
+
   {% if rows %}
   <div class="gallery-grid">
     {% for r in rows %}
-    <a href="{{ url_for('property_detail', apn=r.apn, return_to=return_to_path) }}" class="gallery-card">
+    <a href="{{ url_for('property_detail', apn=r.apn, return_to=return_to_path) }}" class="gallery-card" data-apn="{{ r.apn }}">
       <div class="card-img">
         <img src="/api/streetview/{{ r.apn }}" alt="{{ r.location_of_property }}" loading="lazy"
              onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
@@ -346,6 +402,7 @@
           {% if r.power_status == 'ON' %}<span class="badge badge-power-on">⚡ On</span>{% endif %}
           {% if r.deceased_count and r.deceased_count > 0 %}<span class="badge badge-deceased">D</span>{% endif %}
           {% if r.is_favorite %}<span class="badge badge-fav">★</span>{% endif %}
+          {% if r.in_selected_list %}<span class="badge badge-route">Route</span>{% endif %}
         </div>
       </div>
       <div class="card-body">
@@ -354,6 +411,7 @@
           <span>{{ r.city }}{% if r.situs_zip %} {{ r.situs_zip }}{% endif %}</span>
         </div>
         <div class="card-meta">APN: {{ r.apn }}</div>
+        {% if r.in_selected_list %}<div class="card-meta"><span class="route-chip">In route</span></div>{% endif %}
         {% if r.owner_name %}<div class="card-meta">{{ r.owner_name }}</div>{% endif %}
         {% if r.prop_last_sale_date %}<div class="card-meta">Last Sale: {{ r.prop_last_sale_date }}</div>{% endif %}
         <div class="card-footer-row">
@@ -392,7 +450,7 @@
 
   {% if total_pages > 1 %}
   <div class="pager">
-    {% set filter_qs = "q=" ~ q ~ "&zip=" ~ zip_filter ~ "&city=" ~ city_filter ~ "&owner_name=" ~ owner_name_filter ~ "&power=" ~ power_filter ~ "&vpt=" ~ vpt_filter ~ "&delinquent=" ~ delinquent_filter ~ "&condition=" ~ condition_filter ~ "&outofstate=" ~ outofstate_filter ~ "&research=" ~ research_filter ~ "&outreach_stage=" ~ outreach_stage_filter ~ "&sort=" ~ sort ~ "&order=" ~ order %}
+    {% set filter_qs = "q=" ~ q ~ "&zip=" ~ zip_filter ~ "&city=" ~ city_filter ~ "&county=" ~ county_filter ~ "&owner_name=" ~ owner_name_filter ~ "&power=" ~ power_filter ~ "&vpt=" ~ vpt_filter ~ "&delinquent=" ~ delinquent_filter ~ "&condition=" ~ condition_filter ~ "&outofstate=" ~ outofstate_filter ~ "&research=" ~ research_filter ~ "&outreach_stage=" ~ outreach_stage_filter ~ "&list_id=" ~ (list_id or "") ~ "&sort=" ~ sort ~ "&order=" ~ order %}
 
     {% if page > 1 %}
       <a href="?{{ filter_qs }}&page=1">« First</a>
@@ -428,5 +486,78 @@
       try { localStorage.setItem("barn_apn_list", JSON.stringify(list)); } catch (e) {}
     })
     .catch(function() {});
+
+  function getSelectedRouteId() {
+    const value = document.getElementById('route-list-select').value;
+    return value ? String(value) : '';
+  }
+
+  function applyRouteFilter() {
+    const params = new URLSearchParams(window.location.search);
+    const routeId = getSelectedRouteId();
+    if (routeId) {
+      params.set('list_id', routeId);
+    } else {
+      params.delete('list_id');
+    }
+    params.delete('page');
+    window.location.search = params.toString();
+  }
+
+  function openSelectedRouteMap() {
+    const routeId = getSelectedRouteId();
+    if (!routeId) {
+      alert('Select a route first.');
+      return;
+    }
+    window.location.href = `/map?list_id=${encodeURIComponent(routeId)}`;
+  }
+
+  function openSelectedRoute() {
+    const routeId = getSelectedRouteId();
+    if (!routeId) {
+      alert('Select a route first.');
+      return;
+    }
+    fetch(`/api/lists/${routeId}/route`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.url) {
+          window.open(data.url, '_blank');
+          return;
+        }
+        alert(data.error || 'Could not generate route.');
+      })
+      .catch(err => alert('Error generating route: ' + err.message));
+  }
+
+  function addVisibleCardsToRoute() {
+    const routeId = getSelectedRouteId();
+    if (!routeId) {
+      alert('Select a route first.');
+      return;
+    }
+    const apns = [...document.querySelectorAll('.gallery-card[data-apn]')]
+      .map(card => card.dataset.apn)
+      .filter(Boolean);
+    if (apns.length === 0) {
+      alert('No visible cards to add.');
+      return;
+    }
+    fetch(`/api/lists/${routeId}/add-properties`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apns })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          alert(`Added ${data.count} properties to the route.`);
+          return;
+        }
+        alert(data.error || 'Could not add properties to the route.');
+      })
+      .catch(err => alert('Error adding cards to route: ' + err.message));
+  }
 </script>
 {% endblock %}
