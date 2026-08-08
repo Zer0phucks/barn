@@ -106,8 +106,8 @@ def main() -> None:
 
             # Fetch parcels for this batch
             try:
-                parcel_res = db.get_client().table("parcels").select("APN, row_json").in_("APN", apns).execute()
-                parcel_map = {row["APN"]: row.get("row_json") for row in (parcel_res.data or [])}
+                parcel_res = db.get_client().table("parcels").select("apn, row_json").in_("apn", apns).execute()
+                parcel_map = {row["apn"]: row.get("row_json") for row in (parcel_res.data or [])}
             except Exception as e:
                 logger.error(f"Error fetching parcels for batch: {e}")
                 parcel_map = {}

@@ -35,7 +35,7 @@ class RouteApiTests(unittest.TestCase):
             method="POST",
             json={"apns": [" 003 ", "", "001", None, "002"]},
         ):
-            with patch.object(self.webgui_app, "ensure_lists_tables"), patch.object(
+            with patch.object(
                 self.webgui_app.db, "get_list", return_value={"id": 7, "name": "Route"}
             ), patch.object(
                 self.webgui_app.db, "reorder_list_properties", return_value=3
@@ -54,7 +54,7 @@ class RouteApiTests(unittest.TestCase):
             ],
         }
         with self.webgui_app.app.test_request_context("/api/lists/7/route-preview"):
-            with patch.object(self.webgui_app, "ensure_lists_tables"), patch.object(
+            with patch.object(
                 self.webgui_app.db, "get_list", return_value={"id": 7, "name": "Route"}
             ), patch.object(
                 self.webgui_app.db, "get_list_route_preview", return_value=preview

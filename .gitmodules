@@ -1,0 +1,4 @@
+[submodule "android"]
+	path = android
+	url = https://github.com/Zer0phucks/BARN-scout.git
+	branch = main

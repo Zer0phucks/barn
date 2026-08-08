@@ -9,8 +9,6 @@ Phase 3: Geocode addresses for properties without parcel data, then fetch their 
 from __future__ import annotations
 
 import asyncio
-import json
-import math
 import os
 import signal
 import sys
@@ -24,6 +22,7 @@ from dotenv import load_dotenv
 load_dotenv(BASE_DIR / ".env")
 
 import db
+from geo_utils import derive_latlng
 
 STREETVIEW_DIR = BASE_DIR / "streetview_images"
 STREETVIEW_DIR.mkdir(exist_ok=True)
@@ -35,25 +34,8 @@ BATCH_SIZE = 500
 shutdown_requested = False
 
 
-def web_mercator_to_latlng(x: float, y: float) -> tuple[float, float]:
-    lng = (x / 20037508.34) * 180
-    lat = (y / 20037508.34) * 180
-    lat = 180 / math.pi * (2 * math.atan(math.exp(lat * math.pi / 180)) - math.pi / 2)
-    return lat, lng
-
-
 def get_coords_from_parcel(row_json) -> tuple[float, float] | None:
-    try:
-        parcel = json.loads(row_json) if isinstance(row_json, str) else row_json
-        if not parcel:
-            return None
-        x = float(parcel.get("CENTROID_X") or parcel.get("X_CORD") or 0)
-        y = float(parcel.get("CENTROID_Y") or parcel.get("Y_CORD") or 0)
-        if x and y:
-            return web_mercator_to_latlng(x, y)
-    except (json.JSONDecodeError, ValueError, TypeError):
-        pass
-    return None
+    return derive_latlng(row_json)
 
 
 def get_missing_apns() -> list[str]:
@@ -103,9 +85,9 @@ def get_coords_batch(apns: list[str]) -> list[tuple[str, float, float]]:
     results: list[tuple[str, float, float]] = []
     for i in range(0, len(apns), 100):
         chunk = apns[i : i + 100]
-        r = client.table("parcels").select("APN,row_json").in_("APN", chunk).execute()
+        r = client.table("parcels").select("apn,row_json").in_("apn", chunk).execute()
         for row in r.data or []:
-            apn = row.get("APN")
+            apn = row.get("apn")
             coords = get_coords_from_parcel(row.get("row_json"))
             if apn and coords:
                 results.append((apn, coords[0], coords[1]))

@@ -185,8 +185,8 @@ class RouteQueueTests(unittest.TestCase):
                     },
                 ],
                 "parcels": [
-                    {"APN": "001", "row_json": {"CENTROID_X": "-13603237.85", "CENTROID_Y": "4547675.35"}},
-                    {"APN": "002", "row_json": {"CENTROID_X": "-13603200.00", "CENTROID_Y": "4547600.00"}},
+                    {"apn": "001", "row_json": {"CENTROID_X": "-13603237.85", "CENTROID_Y": "4547675.35"}},
+                    {"apn": "002", "row_json": {"CENTROID_X": "-13603200.00", "CENTROID_Y": "4547600.00"}},
                 ],
             }
         )

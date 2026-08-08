@@ -447,12 +447,12 @@ def logout():
     return redirect(url_for("login"))
 
 
-def web_mercator_to_latlng(x: float, y: float) -> tuple[float, float]:
-    """Convert Web Mercator (EPSG:3857) to WGS84 lat/lng."""
-    lng = (x / 20037508.34) * 180
-    lat = (y / 20037508.34) * 180
-    lat = 180 / math.pi * (2 * math.atan(math.exp(lat * math.pi / 180)) - math.pi / 2)
-    return lat, lng
+# Re-exported from scan/geo_utils.py, the single implementation. This module
+# used to carry a fourth private copy alongside db.py, condition_scanner.py and
+# backfill_streetview.py.
+from geo_utils import web_mercator_to_latlng  # noqa: E402,F401
+
+
 @app.route("/pdf/<path:filename>")
 @login_required
 def pdf(filename: str):
@@ -1789,7 +1789,6 @@ def api_research_status_all():
     """Get current research scanner status."""
     try:
         import scanner.gemini_research_scanner as gemini_research_scanner
-        gemini_research_scanner.ensure_research_columns()
         status = gemini_research_scanner.get_research_state()
 
         # Add DB stats
@@ -1838,7 +1837,6 @@ def api_research_start():
     """Start deep research for specified APNs."""
     try:
         import scanner.gemini_research_scanner as gemini_research_scanner
-        gemini_research_scanner.ensure_research_columns()
         
         data = request.get_json() or {}
         apns = data.get("apns", [])
@@ -1868,7 +1866,6 @@ def api_research_start_all():
     """Start deep research for all properties that have not been fully researched."""
     try:
         import scanner.gemini_research_scanner as gemini_research_scanner
-        gemini_research_scanner.ensure_research_columns()
 
         if not gemini_research_scanner.GOOGLE_API_KEY:
             return jsonify({"status": "error", "message": "GOOGLE_API_KEY not configured in .env"})
@@ -1898,7 +1895,6 @@ def api_research_start_batch():
     try:
         import scanner.gemini_research_scanner as gemini_research_scanner
 
-        gemini_research_scanner.ensure_research_columns()
 
         if not gemini_research_scanner.GOOGLE_API_KEY:
             return jsonify({"status": "error", "message": "GOOGLE_API_KEY not configured in .env"})
@@ -2189,7 +2185,6 @@ def api_condition_status():
     """Get current condition scanner status."""
     try:
         import scanner.condition_scanner as condition_scanner
-        condition_scanner.ensure_condition_columns()
         status = condition_scanner.get_condition_state()
         
         # Add DB stats
@@ -2217,7 +2212,6 @@ def api_condition_start():
     """Start condition scan for specified APNs."""
     try:
         import scanner.condition_scanner as condition_scanner
-        condition_scanner.ensure_condition_columns()
         
         data = request.get_json() or {}
         apns = data.get("apns", [])
@@ -2246,7 +2240,6 @@ def api_condition_start_all():
     """Start condition scan for all unscanned properties."""
     try:
         import scanner.condition_scanner as condition_scanner
-        condition_scanner.ensure_condition_columns()
         
         if not condition_scanner.GOOGLE_API_KEY:
             return jsonify({"status": "error", "message": "GOOGLE_API_KEY not configured"})
@@ -2401,11 +2394,6 @@ def api_pge_stop():
 # Lists API Endpoints (shared between WebUI and Android)
 # ============================================================================
 
-def ensure_lists_tables():
-    """Supabase: lists/list_properties already exist; no-op."""
-    db.ensure_lists_tables()
-
-
 def _normalize_list_name(name: str) -> str:
     return (name or "").strip().casefold()
 
@@ -2481,7 +2469,6 @@ def _chunked_in_query(table: str, select_fields: str, key: str, values: list[str
 @login_required
 def lists_page():
     """Lists management page."""
-    ensure_lists_tables()
     return render_template(
         "lists.html",
         active_nav="search",
@@ -2493,7 +2480,6 @@ def lists_page():
 @login_required
 def api_lists_get():
     """Get all lists with property counts."""
-    ensure_lists_tables()
     _remove_legacy_favorites_lists()
     return jsonify(db.get_lists())
 
@@ -2502,7 +2488,6 @@ def api_lists_get():
 @login_required
 def api_lists_create():
     """Create a new list."""
-    ensure_lists_tables()
     data = request.get_json() or {}
     name = data.get("name", "").strip()
     description = data.get("description", "").strip() or None
@@ -2533,7 +2518,6 @@ def api_lists_create():
 @login_required
 def api_lists_get_one(list_id: int):
     """Get a single list with its properties."""
-    ensure_lists_tables()
     lst = db.get_list(list_id)
     if not lst:
         return jsonify({"error": "List not found"}), 404
@@ -2603,7 +2587,6 @@ def api_favorites_details():
 @login_required
 def api_lists_delete(list_id: int):
     """Delete a list."""
-    ensure_lists_tables()
     deleted = db.delete_list(list_id)
     if deleted:
         return jsonify({"success": True})
@@ -2614,7 +2597,6 @@ def api_lists_delete(list_id: int):
 @login_required
 def api_lists_add_properties(list_id: int):
     """Add properties to a list. Supports 'all' with filters or specific APNs."""
-    ensure_lists_tables()
     try:
         data = cast(dict[str, Any], request.get_json() or {})
         apns = data.get("apns", [])
@@ -2680,7 +2662,6 @@ def api_lists_add_properties(list_id: int):
 @login_required
 def api_lists_reorder(list_id: int):
     """Reorder properties in a list by APN sequence."""
-    ensure_lists_tables()
     data = cast(dict[str, Any], request.get_json() or {})
     apns = data.get("apns", [])
     if not isinstance(apns, list):
@@ -2698,7 +2679,6 @@ def api_lists_reorder(list_id: int):
 @login_required
 def api_lists_remove_property(list_id: int, apn: str):
     """Remove a property from a list."""
-    ensure_lists_tables()
     deleted = db.remove_property_from_list(list_id, apn)
     return jsonify({"success": deleted})
 
@@ -2707,7 +2687,6 @@ def api_lists_remove_property(list_id: int, apn: str):
 @login_required
 def api_lists_route_preview(list_id: int):
     """Return the ordered route preview for a list."""
-    ensure_lists_tables()
     if not db.get_list(list_id):
         return jsonify({"error": "List not found"}), 404
     return jsonify(db.get_list_route_preview(list_id))
@@ -2717,7 +2696,6 @@ def api_lists_route_preview(list_id: int):
 @login_required
 def api_lists_route(list_id: int):
     """Generate optimized Google Maps route URL for a list."""
-    ensure_lists_tables()
     waypoints = db.get_list_route_waypoints(list_id)
     
     if not waypoints:
@@ -2765,16 +2743,10 @@ def api_lists_route(list_id: int):
 # Scouting API Endpoints (for Android Scout App)
 # ============================================================================
 
-def ensure_scout_tables():
-    """Supabase: scouting tables already exist; no-op."""
-    db.ensure_scout_tables()
-
-
 @app.route("/api/scout/collections", methods=["GET"])
 @login_required
 def api_scout_collections_list():
     """List all scouting collections."""
-    ensure_scout_tables()
     return jsonify(db.get_scout_collections())
 
 
@@ -2782,7 +2754,6 @@ def api_scout_collections_list():
 @login_required
 def api_scout_collections_create():
     """Create a new scouting collection."""
-    ensure_scout_tables()
     data = request.get_json() or {}
     name = data.get("name", "").strip()
     description = data.get("description", "").strip() or None
@@ -2807,7 +2778,6 @@ def api_scout_collections_create():
 @login_required
 def api_scout_collections_delete(collection_id: int):
     """Delete a scouting collection."""
-    ensure_scout_tables()
     deleted = db.delete_scout_collection(collection_id)
     if deleted:
         return jsonify({"success": True})
@@ -2818,7 +2788,6 @@ def api_scout_collections_delete(collection_id: int):
 @login_required
 def api_scout_collection_properties(collection_id: int):
     """Get properties in a collection with coordinates."""
-    ensure_scout_tables()
     properties = []
     for row in db.get_collection_properties(collection_id):
         parcel = parse_row_json(row.get("row_json"))
@@ -2848,7 +2817,6 @@ def api_scout_collection_properties(collection_id: int):
 @login_required
 def api_scout_collection_add_property(collection_id: int, apn: str):
     """Add a property to a collection."""
-    ensure_scout_tables()
     added = db.add_properties_to_collection(collection_id, [apn])
     if added:
         return jsonify({"success": True})
@@ -2859,7 +2827,6 @@ def api_scout_collection_add_property(collection_id: int, apn: str):
 @login_required
 def api_scout_collection_remove_property(collection_id: int, apn: str):
     """Remove a property from a collection."""
-    ensure_scout_tables()
     deleted = db.remove_property_from_collection(collection_id, apn)
     if deleted:
         return jsonify({"success": True})
@@ -2870,16 +2837,17 @@ def api_scout_collection_remove_property(collection_id: int, apn: str):
 @login_required
 def api_scout_results_list():
     """Get all scout results."""
-    ensure_scout_tables()
     cid = request.args.get("collection_id")
     collection_id = int(cid) if cid else None
     rows = db.get_scout_results(collection_id)
     results = [{
         "id": r["id"],
         "apn": r["apn"],
-        "collection_id": r.get("collection_id"),
-        "follow_up": r.get("follow_up") == 1,
-        "flyered": r.get("flyered") == 1,
+        # Stored as list_id now; the response key stays collection_id so the
+        # /api/scout/* contract is unchanged for existing clients.
+        "collection_id": r.get("list_id"),
+        "follow_up": bool(r.get("follow_up")),
+        "flyered": bool(r.get("flyered")),
         "notes": r.get("notes"),
         "scouted_at": r.get("scouted_at"),
         "latitude": r.get("latitude"),
@@ -2892,7 +2860,6 @@ def api_scout_results_list():
 @login_required
 def api_scout_results_submit():
     """Submit a scout result."""
-    ensure_scout_tables()
     data = request.get_json() or {}
     apn = data.get("apn")
     if not apn:
@@ -2911,7 +2878,6 @@ def api_scout_results_submit():
 @login_required
 def api_scout_results_stats():
     """Get scouting statistics."""
-    ensure_scout_tables()
     s = db.get_scout_stats()
     return jsonify({
         "total_visits": s["total"],
@@ -2925,117 +2891,70 @@ def api_scout_results_stats():
 @login_required
 def api_scout_next():
     """
-    Get the nearest unscouted property matching filters.
-    
+    Nearest unscouted property matching the active filters.
+
     Query params:
-        lat, lng: User's current location (required)
-        city: Filter by city
-        q: Search query
-        vpt: 1 = VPT only
-        condition_min/max: Filter by condition score
-        list_id: Filter properties in specific list
+        lat, lng: user's current location (required)
+        city, q, vpt, condition_min, condition_max, list_id: filters
+
+    Backed by the scout_next() RPC, which orders by PostGIS `geom <->` against
+    idx_bills_geom. This previously pulled up to 10,000 rows and ran a Python
+    haversine loop over all of them on every request.
     """
-    ensure_scout_tables()
-    
-    # Get user location
     try:
         user_lat = float(request.args.get("lat", 0))
         user_lng = float(request.args.get("lng", 0))
     except (ValueError, TypeError):
         return jsonify({"error": "Valid lat/lng required"}), 400
-    
+
     if user_lat == 0 or user_lng == 0:
         return jsonify({"error": "Valid lat/lng required"}), 400
-    
-    # Get filter params
-    city = request.args.get("city", "").strip()
-    search_q = request.args.get("q", "").strip()
-    vpt_only = request.args.get("vpt") == "1"
-    list_id = request.args.get("list_id")
-    condition_min = request.args.get("condition_min")
-    condition_max = request.args.get("condition_max")
-    
-    # Unscouted APNs
-    scout_apns = {r["apn"] for r in db.get_scout_results(None)}
-    rows, _ = db.get_bills_with_parcels_filtered(
-        q=search_q,
-        city_filter=city,
-        vpt_filter="1" if vpt_only else "",
-        page=1,
-        page_size=10000,
-    )
-    rows = [r for r in rows if r.get("apn") not in scout_apns and (r.get("location_of_property") or "").strip()]
-    if condition_min is not None:
+
+    def _opt_float(name):
+        raw = request.args.get(name)
         try:
-            rows = [r for r in rows if (r.get("condition_score") or 0) >= float(condition_min)]
-        except ValueError:
-            pass
-    if condition_max is not None:
+            return float(raw) if raw not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    def _opt_int(name):
+        raw = request.args.get(name)
         try:
-            rows = [r for r in rows if (r.get("condition_score") or 0) <= float(condition_max)]
-        except ValueError:
-            pass
-    if list_id:
-        try:
-            list_id_int = int(list_id)
-            lp = db.get_client().table("list_properties").select("apn").eq("list_id", list_id_int).execute()
-            list_apns = {row["apn"] for row in (lp.data or [])}
-            rows = [r for r in rows if r.get("apn") in list_apns]
-        except ValueError:
-            pass
-    
+            return int(raw) if raw not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    params = {
+        "p_lat": user_lat,
+        "p_lng": user_lng,
+        "p_city": (request.args.get("city") or "").strip() or None,
+        "p_q": (request.args.get("q") or "").strip() or None,
+        "p_vpt_only": request.args.get("vpt") == "1",
+        "p_list_id": _opt_int("list_id"),
+        "p_condition_min": _opt_float("condition_min"),
+        "p_condition_max": _opt_float("condition_max"),
+        "p_limit": 1,
+    }
+
+    rows = db.get_client().rpc("scout_next", params).execute().data or []
     if not rows:
         return jsonify({"property": None, "remaining": 0})
-    
-    # Find nearest property using haversine-like distance calculation
-    import math
-    
-    def distance_km(lat1, lng1, lat2, lng2):
-        """Calculate approximate distance in km using Haversine formula."""
-        if lat2 is None or lng2 is None:
-            return float('inf')
-        R = 6371  # Earth's radius in km
-        dlat = math.radians(lat2 - lat1)
-        dlng = math.radians(lng2 - lng1)
-        a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng/2)**2
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-        return R * c
-    
-    nearest = None
-    nearest_dist = float('inf')
-    
-    for row in rows:
-        parcel = parse_row_json(row["row_json"])
-        
-        try:
-            x = float(parcel.get("CENTROID_X") or parcel.get("X_CORD") or parcel.get("x") or 0)
-            y = float(parcel.get("CENTROID_Y") or parcel.get("Y_CORD") or parcel.get("y") or 0)
-        except (ValueError, TypeError):
-            continue
-        
-        if x == 0 or y == 0:
-            continue
-        
-        lat, lng = web_mercator_to_latlng(x, y)
-        dist = distance_km(user_lat, user_lng, lat, lng)
-        
-        if dist < nearest_dist:
-            nearest_dist = dist
-            nearest = {
-                "apn": row["apn"],
-                "address": row.get("location_of_property"),
-                "city": row.get("city"),
-                "latitude": lat,
-                "longitude": lng,
-                "has_vpt": row.get("has_vpt") == 1,
-                "condition_score": row.get("condition_score"),
-                "streetview_image_path": row.get("streetview_image_path"),
-                "distance_km": round(dist, 2)
-            }
-    
+
+    row = rows[0]
     return jsonify({
-        "property": nearest,
-        "remaining": len(rows) - 1 if nearest else len(rows)
+        "property": {
+            "apn": row["apn"],
+            "address": row.get("address"),
+            "city": row.get("city"),
+            "latitude": row.get("latitude"),
+            "longitude": row.get("longitude"),
+            "has_vpt": row.get("has_vpt") == 1,
+            "condition_score": row.get("condition_score"),
+            "streetview_image_path": row.get("streetview_image_path"),
+            "distance_km": round(row["distance_km"], 2) if row.get("distance_km") is not None else None,
+        },
+        # scout_next() returns candidates-minus-one, matching the old contract.
+        "remaining": max(int(row.get("remaining") or 0), 0),
     })
 
 
@@ -3054,7 +2973,6 @@ def api_properties_list():
     page = int(request.args.get("page", 1))
     per_page = min(int(request.args.get("per_page", 50)), 200)
     
-    ensure_scout_tables()
     scout_apns = {r["apn"] for r in db.get_scout_results(None)}
     
     rows, total = db.get_bills_with_parcels_filtered(

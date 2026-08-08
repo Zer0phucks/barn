@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-import math
 import os
 import sys
 from datetime import datetime
@@ -34,7 +33,15 @@ except ImportError:
 # Load environment variables from the correct path
 BASE_DIR = Path(__file__).resolve().parent
 STREETVIEW_DIR = BASE_DIR / "streetview_images"
+# Supabase Storage bucket mirroring STREETVIEW_DIR, so the Android app has a
+# fetchable URL for each property image. Must exist and be public.
+STORAGE_BUCKET = "streetview-images"
 ENV_FILE = BASE_DIR / ".env"
+
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from geo_utils import derive_latlng  # noqa: E402
 
 # Load .env file explicitly from BASE_DIR
 if ENV_FILE.exists():
@@ -72,29 +79,39 @@ def ensure_condition_columns() -> None:
     pass
 
 
-def web_mercator_to_latlng(x: float, y: float) -> tuple[float, float]:
-    """Convert Web Mercator (EPSG:3857) to WGS84 lat/lng."""
-    lng = (x / 20037508.34) * 180
-    lat = (y / 20037508.34) * 180
-    lat = 180 / math.pi * (2 * math.atan(math.exp(lat * math.pi / 180)) - math.pi / 2)
-    return lat, lng
-
-
 def get_property_coords(apn: str) -> tuple[float, float] | None:
     """Get lat/lng coordinates for a property."""
     import db
     row = db.get_bill_with_parcel(apn)
-    if not row or not row.get("row_json"):
+    if not row:
         return None
+    return derive_latlng(row.get("row_json"))
+
+
+def _upload_to_storage(local_path: Path, apn: str) -> str | None:
+    """Upload a captured property image to Supabase Storage, returning its public URL.
+
+    The Android scout app reads bills.streetview_image_path directly, so that
+    column has to hold something a phone can fetch — a path on the scanner VM's
+    disk is useless to it. Flask keeps serving from local disk via
+    /api/streetview/<apn>, so the local file is still written either way and a
+    failed upload is non-fatal.
+    """
+    import db
     try:
-        parcel = json.loads(row["row_json"]) if isinstance(row["row_json"], str) else row["row_json"]
-        x = float(parcel.get("CENTROID_X") or parcel.get("X_CORD") or 0)
-        y = float(parcel.get("CENTROID_Y") or parcel.get("Y_CORD") or 0)
-        if x and y:
-            return web_mercator_to_latlng(x, y)
-    except (json.JSONDecodeError, ValueError, TypeError):
-        pass
-    return None
+        safe_apn = apn.replace("/", "_").replace("\\", "_")
+        object_path = f"{safe_apn}.jpg"
+        storage = db.get_client().storage.from_(STORAGE_BUCKET)
+        with open(local_path, "rb") as f:
+            storage.upload(
+                object_path,
+                f.read(),
+                file_options={"content-type": "image/jpeg", "upsert": "true"},
+            )
+        return storage.get_public_url(object_path)
+    except Exception as e:
+        print(f"  Storage upload failed (image still saved locally): {e}")
+        return None
 
 
 async def fetch_streetview_image(lat: float, lng: float, apn: str) -> Path | None:
@@ -143,10 +160,18 @@ async def fetch_streetview_image(lat: float, lng: float, apn: str) -> Path | Non
 
 
 def update_condition(apn: str, score: float, notes: str, image_path: str | None = None) -> None:
-    """Update condition data for a property."""
+    """Update condition data for a property.
+
+    Stores the Supabase Storage public URL in streetview_image_path when the
+    upload succeeds, falling back to the local path so behaviour is unchanged
+    when Storage is unavailable.
+    """
     import db
     now = datetime.now().isoformat()
-    db.update_bill_condition(apn, score, notes, condition_updated_at=now, streetview_image_path=str(image_path) if image_path else None)
+    stored_path: str | None = None
+    if image_path:
+        stored_path = _upload_to_storage(Path(image_path), apn) or str(image_path)
+    db.update_bill_condition(apn, score, notes, condition_updated_at=now, streetview_image_path=stored_path)
 
 
 async def analyze_property_condition(apn: str) -> tuple[bool, float, str, Path | None]:

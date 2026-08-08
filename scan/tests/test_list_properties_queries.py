@@ -44,10 +44,10 @@ class _FakeQuery:
             return SimpleNamespace(data=data)
 
         if self.table_name == "parcels":
-            apns = self.in_filters.get("APN")
+            apns = self.in_filters.get("apn")
             if apns is None:
-                raise AssertionError("expected parcels lookup to use a bulk APN query")
-            data = [row for row in self.tables["parcels"] if row["APN"] in set(apns)]
+                raise AssertionError("expected parcels lookup to use a bulk apn query")
+            data = [row for row in self.tables["parcels"] if row["apn"] in set(apns)]
             return SimpleNamespace(data=data)
 
         raise AssertionError(f"unexpected table lookup: {self.table_name}")
@@ -86,8 +86,8 @@ class GetListPropertiesTests(unittest.TestCase):
                     },
                 ],
                 "parcels": [
-                    {"APN": "001-001", "row_json": {"x": 1, "y": 1}},
-                    {"APN": "002-002", "row_json": {"x": 2, "y": 2}},
+                    {"apn": "001-001", "row_json": {"x": 1, "y": 1}},
+                    {"apn": "002-002", "row_json": {"x": 2, "y": 2}},
                 ],
             }
         )

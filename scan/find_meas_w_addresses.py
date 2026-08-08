@@ -27,6 +27,11 @@ INPUT_CSV = BASE_DIR / "parcels.csv"
 LEGACY_INPUT_CSV = BASE_DIR / "Parcels_5567367248157875843.csv"
 CACHE_JSONL = BASE_DIR / "measw_cache.jsonl"
 
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from geo_utils import derive_latlng  # noqa: E402
+
 BASE_URL = "https://propertytax.alamedacountyca.gov"
 ACCOUNT_SUMMARY = BASE_URL + "/account-summary?apn="
 
@@ -374,12 +379,19 @@ def upsert_db(
 ) -> None:
     import db
     city = None
+    lat = lng = None
     if row_json:
         try:
             row_data = json.loads(row_json)
             city = row_data.get("CITY", row_data.get("SitusCity", "")).strip().upper()
         except json.JSONDecodeError:
             pass
+        # Derive coordinates here rather than in a separate backfill pass: the
+        # parcel centroid is already in hand, and bills.lat/lng feed the
+        # bills_set_geom trigger that scout_next()'s KNN ordering depends on.
+        latlng = derive_latlng(row_json)
+        if latlng:
+            lat, lng = latlng
         db.upsert_parcel(apn, row_json)
 
     fields = extract_bill_fields_from_html(bill_html)
@@ -399,6 +411,8 @@ def upsert_db(
         has_vpt=int(fields.get("has_vpt") or 0),
         vpt_marker=fields.get("vpt_marker"),
         city=city,
+        lat=lat,
+        lng=lng,
     )
     db.upsert_result(apn, None)
 

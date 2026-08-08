@@ -49,7 +49,7 @@ class PropertiesEndpointPaginationTests(unittest.TestCase):
             return full_rows[:200], len(full_rows)
 
         with self.webgui_app.app.test_request_context("/api/properties?page=3&per_page=200"):
-            with patch.object(self.webgui_app, "ensure_scout_tables"), patch.object(
+            with patch.object(
                 self.webgui_app.db, "get_scout_results", return_value=[]
             ), patch.object(
                 self.webgui_app.db,

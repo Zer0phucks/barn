@@ -6,14 +6,23 @@ Replaces all SQLite usage with Supabase client.
 from __future__ import annotations
 
 import json
-import math
 import os
 import re
+import sys
 import time
 from pathlib import Path
 from typing import Any
 
 BASE_DIR = Path(__file__).resolve().parent
+
+# webgui/db.py loads this module by file path (spec_from_file_location), which
+# does not put scan/ on sys.path. Guard so the geo_utils import below resolves
+# whether we're imported as `db`, exec'd from webgui/, or run from Vercel.
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from geo_utils import derive_latlng  # noqa: E402
+
 ENV_FILE = BASE_DIR / ".env"
 if ENV_FILE.exists():
     with open(ENV_FILE) as f:
@@ -168,7 +177,7 @@ def get_client() -> Client:
 
 
 # ---------------------------------------------------------------------------
-# Parcels (Supabase parcels table has "APN" and row_json)
+# Parcels (Supabase parcels table: lowercase apn PK + row_json jsonb)
 # ---------------------------------------------------------------------------
 
 def upsert_parcel(apn: str, row_json: str | dict | None) -> None:
@@ -178,7 +187,7 @@ def upsert_parcel(apn: str, row_json: str | dict | None) -> None:
             row = json.loads(row) if row else None
         except json.JSONDecodeError:
             row = None
-    get_client().table("parcels").upsert({"APN": apn, "row_json": row}).execute()
+    get_client().table("parcels").upsert({"apn": apn, "row_json": row}).execute()
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +216,8 @@ def upsert_bill(
     research_status: str | None = None,
     research_report_path: str | None = None,
     research_updated_at: str | None = None,
+    lat: float | None = None,
+    lng: float | None = None,
 ) -> None:
     payload: dict[str, Any] = {
         "apn": apn,
@@ -230,7 +241,15 @@ def upsert_bill(
         "research_status": research_status,
         "research_report_path": research_report_path,
         "research_updated_at": research_updated_at,
+        # geom is derived from these by the bills_set_geom trigger; never write
+        # geom directly.
+        "lat": lat,
+        "lng": lng,
     }
+    # None-filtering is load-bearing: PostgREST's merge-duplicates upsert only
+    # touches columns present in the payload, so a re-scrape must not send
+    # nulls for enrichment columns (condition_score, research_status, ...) it
+    # knows nothing about.
     payload = {k: v for k, v in payload.items() if v is not None or k == "apn"}
     if "pdf_file" not in payload or payload.get("pdf_file") is None:
         payload["pdf_file"] = ""
@@ -688,9 +707,9 @@ def _attach_parcel_row_json(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     chunk_size = 100
     for index in range(0, len(apns), chunk_size):
         chunk = apns[index : index + chunk_size]
-        result = get_client().table("parcels").select("APN,row_json").in_("APN", chunk).execute()
+        result = get_client().table("parcels").select("apn,row_json").in_("apn", chunk).execute()
         for parcel_row in (result.data or []):
-            apn = str(parcel_row.get("APN") or "")
+            apn = str(parcel_row.get("apn") or "")
             if apn:
                 parcel_map[apn] = parcel_row.get("row_json")
 
@@ -1062,22 +1081,83 @@ def upsert_result(apn: str, pdf_file: str | None = None) -> None:
 # Favorites (Supabase: apn, added_at)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Favorites.
+#
+# The standalone `favorites` table is gone: it duplicated list_properties for
+# a single implicit list. Favorites are now rows in the list named 'Favorites'
+# (seeded by supabase/migrations/20260807000003_scouting.sql), so one mechanism
+# backs both. The public function names are unchanged — routes, templates and
+# callers keep working.
+# ---------------------------------------------------------------------------
+
+FAVORITES_LIST_NAME = "Favorites"
+_favorites_list_id: int | None = None
+
+
+def get_favorites_list_id(create: bool = False) -> int | None:
+    """Resolve (and cache) the id of the Favorites list.
+
+    The list is seeded by migration, so a miss means something is off. Reads
+    pass create=False and tolerate None rather than 500 the whole map page over
+    a favorites overlay; writes pass create=True because they need a real id.
+    """
+    global _favorites_list_id
+    if _favorites_list_id is not None:
+        return _favorites_list_id
+    r = (
+        get_client()
+        .table("lists")
+        .select("id")
+        .eq("name", FAVORITES_LIST_NAME)
+        .limit(1)
+        .execute()
+    )
+    if r.data:
+        _favorites_list_id = int(r.data[0]["id"])
+    elif create:
+        _favorites_list_id = create_list(FAVORITES_LIST_NAME, "Ad-hoc saved properties")
+    return _favorites_list_id
+
+
 def get_favorites_apns() -> list[str]:
-    r = get_client().table("favorites").select("apn").execute()
+    list_id = get_favorites_list_id()
+    if list_id is None:
+        return []
+    r = (
+        get_client()
+        .table("list_properties")
+        .select("apn")
+        .eq("list_id", list_id)
+        .execute()
+    )
     return [row["apn"] for row in (r.data or []) if row.get("apn")]
 
 
 def add_favorite(apn: str) -> None:
-    get_client().table("favorites").upsert({"apn": apn}).execute()
+    add_properties_to_list(get_favorites_list_id(create=True), [apn])
 
 
 def remove_favorite(apn: str) -> None:
-    get_client().table("favorites").delete().eq("apn", apn).execute()
+    list_id = get_favorites_list_id()
+    if list_id is not None:
+        remove_property_from_list(list_id, apn)
 
 
 def has_favorite(apn: str) -> bool:
-    r = get_client().table("favorites").select("apn").eq("apn", apn).limit(1).execute()
-    return bool(r.data and len(r.data) > 0)
+    list_id = get_favorites_list_id()
+    if list_id is None:
+        return False
+    r = (
+        get_client()
+        .table("list_properties")
+        .select("apn")
+        .eq("list_id", list_id)
+        .eq("apn", apn)
+        .limit(1)
+        .execute()
+    )
+    return bool(r.data)
 
 
 def toggle_favorite(apn: str) -> bool:
@@ -1086,6 +1166,13 @@ def toggle_favorite(apn: str) -> bool:
         return False
     add_favorite(apn)
     return True
+
+
+def bulk_add_favorites(apns: list[str]) -> int:
+    """Add multiple APNs to favorites. Returns count inserted."""
+    if not apns:
+        return 0
+    return add_properties_to_list(get_favorites_list_id(create=True), apns)
 
 
 # ---------------------------------------------------------------------------
@@ -1097,8 +1184,8 @@ def get_bill_with_parcel(apn: str) -> dict[str, Any] | None:
     bill = get_bill(apn)
     if not bill:
         return None
-    # Parcels table uses "APN" - fetch parcel
-    r = get_client().table("parcels").select("row_json").eq("APN", apn).limit(1).execute()
+    # Fetch the raw county parcel row
+    r = get_client().table("parcels").select("row_json").eq("apn", apn).limit(1).execute()
     row_json = None
     if r.data and len(r.data) > 0:
         row_json = r.data[0].get("row_json")
@@ -1150,31 +1237,11 @@ def delete_list(list_id: int) -> bool:
     return bool(r.data)
 
 
-def _web_mercator_to_latlng(x: float, y: float) -> tuple[float, float]:
-    lng = (x / 20037508.34) * 180
-    lat = (y / 20037508.34) * 180
-    lat = 180 / math.pi * (2 * math.atan(math.exp(lat * math.pi / 180)) - math.pi / 2)
-    return lat, lng
-
-
 def _extract_lat_lng_from_row_json(row_json: str | dict | None) -> tuple[float | None, float | None]:
-    if not row_json:
-        return None, None
-    if isinstance(row_json, str):
-        try:
-            row_json = json.loads(row_json)
-        except json.JSONDecodeError:
-            return None, None
-    if not isinstance(row_json, dict):
-        return None, None
-    try:
-        x = float(row_json.get("CENTROID_X") or row_json.get("X_CORD") or row_json.get("x") or 0)
-        y = float(row_json.get("CENTROID_Y") or row_json.get("Y_CORD") or row_json.get("y") or 0)
-    except (TypeError, ValueError):
-        return None, None
-    if not x or not y:
-        return None, None
-    return _web_mercator_to_latlng(x, y)
+    """Thin adapter over geo_utils.derive_latlng that keeps this module's
+    (lat, lng) | (None, None) tuple contract for existing callers."""
+    latlng = derive_latlng(row_json)
+    return latlng if latlng is not None else (None, None)
 
 
 def _normalize_list_apns(apns: list[str], existing_apns: set[str] | None = None) -> list[str]:
@@ -1222,14 +1289,14 @@ def _fetch_list_property_context(list_id: int) -> list[dict[str, Any]]:
     parcel_rows = (
         get_client()
         .table("parcels")
-        .select("APN, row_json")
-        .in_("APN", apns)
+        .select("apn, row_json")
+        .in_("apn", apns)
         .execute()
     )
     parcel_map = {
-        row.get("APN"): row.get("row_json")
+        row.get("apn"): row.get("row_json")
         for row in (parcel_rows.data or [])
-        if row.get("APN")
+        if row.get("apn")
     }
 
     favorites = set(get_favorites_apns())
@@ -1304,7 +1371,7 @@ def add_properties_to_list(list_id: int, apns: list[str]) -> int:
         apn = str(raw_apn or "").strip()
         if not apn or apn in existing_apns:
             continue
-        get_client().table("list_properties").upsert({"list_id": list_id, "apn": apn, "sort_order": next_sort_order}).execute()
+        get_client().table("list_properties").upsert({"list_id": list_id, "apn": apn, "sort_order": next_sort_order}, on_conflict="list_id,apn").execute()
         existing_apns.add(apn)
         added += 1
         next_sort_order += 1
@@ -1386,7 +1453,7 @@ def reorder_list_properties(list_id: int, apns: list[str]) -> int:
 
     updated = 0
     for sort_order, apn in enumerate(ordered):
-        get_client().table("list_properties").upsert({"list_id": list_id, "apn": apn, "sort_order": sort_order}).execute()
+        get_client().table("list_properties").upsert({"list_id": list_id, "apn": apn, "sort_order": sort_order}, on_conflict="list_id,apn").execute()
         updated += 1
     return updated
 
@@ -1426,97 +1493,91 @@ def get_list_route_preview(list_id: int) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Scouting (scouting_collections, collection_properties, scout_results)
+# Scouting (lists, list_properties, scout_results)
 # ---------------------------------------------------------------------------
 
-def ensure_scout_tables() -> None:
-    pass
+# ---------------------------------------------------------------------------
+# Scouting collections.
+#
+# `scouting_collections` and `collection_properties` no longer exist: they were
+# a second, parallel copy of lists/list_properties, dead on the Kotlin side
+# (Repositories.kt already aliases Collection -> List) and dropped in the
+# 2026-08-07 baseline schema. These functions keep the /api/scout/collections
+# route shape working while delegating to the single lists implementation.
+#
+# scout_results.collection_id likewise became scout_results.list_id, and
+# follow_up / flyered are real booleans now rather than 0/1 integers.
+# ---------------------------------------------------------------------------
 
 
 def get_scout_collections() -> list[dict]:
-    r = get_client().table("scouting_collections").select("id, name, description, created_at").order("name").execute()
     out = []
-    for row in r.data or []:
-        cp = get_client().table("collection_properties").select("id", count="exact").eq("collection_id", row["id"]).execute()
-        sr = get_client().table("scout_results").select("apn", count="exact").eq("collection_id", row["id"]).execute()
-        out.append({
-            "id": row["id"],
-            "name": row["name"],
-            "description": row.get("description"),
-            "created_at": row.get("created_at"),
-            "property_count": cp.count or 0,
-            "scouted_count": sr.count or 0,
-        })
+    for row in get_lists():
+        scouted = (
+            get_client()
+            .table("scout_results")
+            .select("apn", count="exact")
+            .eq("list_id", row["id"])
+            .execute()
+        )
+        out.append({**row, "scouted_count": scouted.count or 0})
     return out
 
 
 def create_scout_collection(name: str, description: str | None = None, apns: list[str] | None = None) -> int:
-    r = get_client().table("scouting_collections").insert({"name": name, "description": description or ""}).execute()
-    if not r.data or len(r.data) == 0:
-        raise RuntimeError("Failed to create collection")
-    cid = int(r.data[0]["id"])
+    list_id = create_list(name, description)
     if apns:
-        for i, apn in enumerate(apns):
-            get_client().table("collection_properties").upsert({"collection_id": cid, "apn": apn, "sort_order": i}).execute()
-    return cid
+        add_properties_to_list(list_id, apns)
+    return list_id
 
 
 def delete_scout_collection(collection_id: int) -> bool:
-    get_client().table("scout_results").delete().eq("collection_id", collection_id).execute()
-    get_client().table("collection_properties").delete().eq("collection_id", collection_id).execute()
-    r = get_client().table("scouting_collections").delete().eq("id", collection_id).execute()
-    return bool(r.data)
+    return delete_list(collection_id)
 
 
 def get_collection_properties(collection_id: int) -> list[dict]:
-    cp = get_client().table("collection_properties").select("apn, sort_order").eq("collection_id", collection_id).order("sort_order").execute()
-    if not cp.data:
-        return []
-    apns = [row["apn"] for row in cp.data]
-    bills = get_client().table("bills").select("apn, location_of_property, has_vpt, condition_score, city, streetview_image_path").in_("apn", apns).execute()
-    bill_map = {b["apn"]: b for b in (bills.data or [])}
-    out = []
-    for row in cp.data:
-        apn = row["apn"]
-        b = bill_map.get(apn, {})
-        parcel_r = get_client().table("parcels").select("row_json").eq("APN", apn).limit(1).execute()
-        row_json = parcel_r.data[0].get("row_json") if (parcel_r.data and len(parcel_r.data) > 0) else None
-        out.append({"apn": apn, "sort_order": row.get("sort_order"), "row_json": row_json, **b})
-    return out
+    return get_list_properties(collection_id)
 
 
 def add_properties_to_collection(collection_id: int, apns: list[str]) -> int:
-    existing = get_client().table("collection_properties").select("apn").eq("collection_id", collection_id).execute()
-    existing_apns = {row["apn"] for row in (existing.data or [])}
-    max_r = get_client().table("collection_properties").select("sort_order").eq("collection_id", collection_id).order("sort_order", desc=True).limit(1).execute()
-    sort_order = (max_r.data[0]["sort_order"] + 1) if max_r.data else 0
-    added = 0
-    for i, apn in enumerate(apns):
-        if apn in existing_apns:
-            continue
-        get_client().table("collection_properties").upsert({"collection_id": collection_id, "apn": apn, "sort_order": sort_order + i}).execute()
-        added += 1
-    return added
+    return add_properties_to_list(collection_id, apns)
 
 
 def remove_property_from_collection(collection_id: int, apn: str) -> bool:
-    r = get_client().table("collection_properties").delete().eq("collection_id", collection_id).eq("apn", apn).execute()
-    return bool(r.data)
+    return remove_property_from_list(collection_id, apn)
 
 
 def get_scout_results(collection_id: int | None = None) -> list[dict]:
-    q = get_client().table("scout_results").select("id, apn, collection_id, follow_up, flyered, notes, scouted_at, latitude, longitude")
+    q = get_client().table("scout_results").select(
+        "id, apn, list_id, follow_up, flyered, notes, scouted_at, latitude, longitude"
+    )
     if collection_id is not None:
-        q = q.eq("collection_id", collection_id)
+        q = q.eq("list_id", collection_id)
     r = q.order("scouted_at", desc=True).execute()
     return r.data or []
 
 
-def upsert_scout_result(apn: str, collection_id: int | None = None, follow_up: int = 0, flyered: int = 0, notes: str | None = None, latitude: float | None = None, longitude: float | None = None) -> int:
-    payload = {"apn": apn, "follow_up": follow_up, "flyered": flyered, "notes": notes or "", "latitude": latitude, "longitude": longitude}
+def upsert_scout_result(
+    apn: str,
+    collection_id: int | None = None,
+    follow_up: int = 0,
+    flyered: int = 0,
+    notes: str | None = None,
+    latitude: float | None = None,
+    longitude: float | None = None,
+) -> int:
+    payload: dict[str, Any] = {
+        "apn": apn,
+        # Callers still pass 0/1; the columns are boolean.
+        "follow_up": bool(follow_up),
+        "flyered": bool(flyered),
+        "notes": notes or "",
+        "latitude": latitude,
+        "longitude": longitude,
+    }
     if collection_id is not None:
-        payload["collection_id"] = collection_id
-    r = get_client().table("scout_results").upsert(payload).execute()
+        payload["list_id"] = collection_id
+    r = get_client().table("scout_results").insert(payload).execute()
     if r.data and len(r.data) > 0:
         return int(r.data[0]["id"])
     return 0
@@ -1524,15 +1585,14 @@ def upsert_scout_result(apn: str, collection_id: int | None = None, follow_up: i
 
 def get_scout_stats() -> dict:
     total = get_client().table("scout_results").select("id", count="exact").execute()
-    follow_ups = get_client().table("scout_results").select("id", count="exact").eq("follow_up", 1).execute()
-    flyered = get_client().table("scout_results").select("id", count="exact").eq("flyered", 1).execute()
-    unique = get_client().rpc("get_distinct_apn_count_scout_results", {}).execute() if False else None
-    # If no RPC, count distinct by fetching (simplified)
+    follow_ups = get_client().table("scout_results").select("id", count="exact").eq("follow_up", True).execute()
+    flyered = get_client().table("scout_results").select("id", count="exact").eq("flyered", True).execute()
+    distinct = get_client().table("scout_results").select("apn").execute()
     return {
         "total": total.count or 0,
         "follow_ups": follow_ups.count or 0,
         "flyered": flyered.count or 0,
-        "unique_properties": total.count or 0,
+        "unique_properties": len({row["apn"] for row in (distinct.data or [])}),
     }
 
 
@@ -1867,20 +1927,6 @@ def bulk_delete_bills(apns: list[str]) -> int:
         r = get_client().table("bills").delete().in_("apn", chunk).execute()
         deleted += len(r.data or [])
     return deleted
-
-
-def bulk_add_favorites(apns: list[str]) -> int:
-    """Add multiple APNs to favorites. Returns count inserted."""
-    if not apns:
-        return 0
-    PAGE = 100
-    added = 0
-    for i in range(0, len(apns), PAGE):
-        chunk = apns[i : i + PAGE]
-        rows = [{"apn": apn} for apn in chunk]
-        r = get_client().table("favorites").upsert(rows).execute()
-        added += len(r.data or [])
-    return added
 
 
 def get_distinct_zips() -> list[str]:
