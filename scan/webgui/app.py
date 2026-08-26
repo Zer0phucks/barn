@@ -1340,19 +1340,16 @@ def api_markers():
     markers = []
     for r in rows:
         parcel = parse_row_json(r["row_json"])
-        
-        # Get coordinates from parcel data (handle both CSV formats)
-        try:
-            x = float(parcel.get("CENTROID_X") or parcel.get("X_CORD") or parcel.get("x") or 0)
-            y = float(parcel.get("CENTROID_Y") or parcel.get("Y_CORD") or parcel.get("y") or 0)
-        except (ValueError, TypeError):
-            x, y = 0, 0
-        
-        if x == 0 or y == 0:
+
+        # bills.lat/lng are populated during the scrape and are the same values
+        # the geom column and scout_next() order by, so the map and the scouting
+        # queue can no longer disagree. This used to re-derive coordinates from
+        # the parcel's Web Mercator centroid on every row.
+        lat = r.get("lat")
+        lng = r.get("lng")
+        if lat is None or lng is None:
             continue
-        
-        lat, lng = web_mercator_to_latlng(x, y)
-        
+
         location = r["location_of_property"] or ""
         power = r["power_status"] or ""
         apn = r["apn"] or ""

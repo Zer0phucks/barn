@@ -332,130 +332,6 @@ def get_bill(apn: str) -> dict[str, Any] | None:
     return None
 
 
-def _normalize_research_filter(research_filter: str) -> str:
-    value = (research_filter or "").strip().lower()
-    aliases = {
-        "all": "",
-        "researched": "completed",
-        "not_researched": "unchecked",
-        "not-researched": "unchecked",
-        "unresearched": "unchecked",
-        "notresearched": "unchecked",
-        "none": "unchecked",
-    }
-    value = aliases.get(value, value)
-    allowed = {"", "completed", "unchecked", "in_progress", "failed", "pending"}
-    return value if value in allowed else ""
-
-
-def _is_get_bills_filtered_ambiguous_error(exc: Exception) -> bool:
-    msg = str(exc).lower()
-    return (
-        "get_bills_filtered" in msg
-        and ("pgrst203" in msg or "could not choose the best candidate function" in msg)
-    )
-
-
-def _is_get_bills_filtered_missing_error(exc: Exception) -> bool:
-    msg = str(exc).lower()
-    return (
-        "get_bills_filtered" in msg
-        and (
-            "could not find the function public.get_bills_filtered" in msg
-            or "function public.get_bills_filtered" in msg
-        )
-    )
-
-
-def _is_get_bills_filtered_missing_added_at_error(exc: Exception) -> bool:
-    msg = str(exc).lower()
-    return "added_at" in msg and "does not exist" in msg
-
-
-def _is_rpc_auth_error(exc: Exception) -> bool:
-    msg = str(exc).lower()
-    return "42501" in msg or "authenticated session" in msg
-
-
-def _execute_get_bills_filtered_rpc(
-    payload: dict[str, Any],
-    owner_name_filter: str = "",
-) -> Any:
-    owner_name = (owner_name_filter or "").strip()
-    attempts: list[dict[str, Any]] = []
-
-    newest_payload = dict(payload)
-    newest_payload["p_owner_name"] = owner_name
-    attempts.append(newest_payload)
-
-    current_payload = dict(payload)
-    attempts.append(current_payload)
-
-    if "p_research" in current_payload:
-        legacy_payload = dict(current_payload)
-        legacy_payload.pop("p_research", None)
-        attempts.append(legacy_payload)
-
-    last_exc: Exception | None = None
-    for index, candidate in enumerate(attempts):
-        try:
-            return get_client().rpc("get_bills_filtered", candidate).execute()
-        except Exception as exc:
-            last_exc = exc
-            is_last_attempt = index == len(attempts) - 1
-            if is_last_attempt:
-                raise
-            if _is_get_bills_filtered_missing_error(exc) or _is_get_bills_filtered_ambiguous_error(exc):
-                continue
-            raise
-
-    if last_exc is not None:
-        raise last_exc
-    raise RuntimeError("get_bills_filtered RPC did not execute")
-
-
-def _get_apns_for_research_filter(research_filter: str) -> set[str]:
-    normalized = _normalize_research_filter(research_filter)
-    if not normalized:
-        return set()
-
-    apns: set[str] = set()
-    batch_size = 1000
-    offset = 0
-
-    while True:
-        query = get_client().table("bills").select("apn").range(offset, offset + batch_size - 1)
-        if normalized == "unchecked":
-            query = query.or_("research_status.is.null,research_status.eq.unchecked")
-        else:
-            query = query.eq("research_status", normalized)
-        r = query.execute()
-        rows = r.data or []
-        if not rows:
-            break
-        apns.update(row["apn"] for row in rows if row.get("apn"))
-        if len(rows) < batch_size:
-            break
-        offset += batch_size
-
-    return apns
-
-
-def _parse_get_bills_filtered_response(data: Any) -> tuple[list[dict], int]:
-    if not data:
-        return [], 0
-    row = data[0] if isinstance(data, list) and len(data) > 0 else data
-    if not isinstance(row, dict):
-        return [], 0
-    if "get_bills_filtered" in row:
-        row = row["get_bills_filtered"]
-    if not isinstance(row, dict):
-        return [], 0
-    total = int(row.get("total", 0))
-    rows = row.get("rows") or []
-    return (rows if isinstance(rows, list) else []), total
-
-
 _CONTACT_FILTER_COLUMNS = (
     "prop_occupancy_type",
     "prop_ownership_type",
@@ -486,175 +362,6 @@ _RPC_SORT_COLUMNS = {
 }
 
 
-def _first_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    s = str(value).strip()
-    if not s:
-        return None
-    m = re.search(r"\d+", s)
-    if not m:
-        return None
-    try:
-        return int(m.group(0))
-    except ValueError:
-        return None
-
-
-def _matches_text_filter(value: Any, filter_value: str) -> bool:
-    needle = (filter_value or "").strip().lower()
-    if not needle:
-        return True
-    return needle in str(value or "").lower()
-
-
-def _matches_numeric_filter(value: Any, filter_value: str) -> bool:
-    raw = (filter_value or "").strip().lower()
-    if not raw:
-        return True
-
-    n = _first_int(value)
-    if raw in {"null", "none", "na", "n/a", "unknown"}:
-        return n is None
-
-    plus = re.fullmatch(r"(\d+)\+", raw)
-    if plus:
-        return n is not None and n >= int(plus.group(1))
-
-    rng = re.fullmatch(r"(\d+)\s*-\s*(\d+)", raw)
-    if rng:
-        lo = int(rng.group(1))
-        hi = int(rng.group(2))
-        if lo > hi:
-            lo, hi = hi, lo
-        return n is not None and lo <= n <= hi
-
-    if raw.isdigit():
-        return n is not None and n == int(raw)
-
-    return raw in str(value or "").lower()
-
-
-def _row_matches_contact_filters(
-    row: dict[str, Any],
-    occupancy_filter: str = "",
-    ownership_filter: str = "",
-    primary_resident_age_filter: str = "",
-    deceased_count_filter: str = "",
-) -> bool:
-    if not _matches_text_filter(row.get("prop_occupancy_type"), occupancy_filter):
-        return False
-    if not _matches_text_filter(row.get("prop_ownership_type"), ownership_filter):
-        return False
-    if not _matches_numeric_filter(row.get("primary_resident_age"), primary_resident_age_filter):
-        return False
-    if not _matches_numeric_filter(row.get("deceased_count"), deceased_count_filter):
-        return False
-    return True
-
-
-def _fetch_bill_contact_fields_for_apns(apns: list[str]) -> dict[str, dict[str, Any]]:
-    if not apns:
-        return {}
-    out: dict[str, dict[str, Any]] = {}
-    chunk_size = 500
-    cols = ",".join(["apn", *_CONTACT_ENRICH_COLUMNS])
-    for i in range(0, len(apns), chunk_size):
-        chunk = apns[i : i + chunk_size]
-        r = get_client().table("bills").select(cols).in_("apn", chunk).execute()
-        for row in (r.data or []):
-            apn = row.get("apn")
-            if apn:
-                out[str(apn)] = row
-    return out
-
-
-def _enrich_rows_with_contact_fields(rows: list[dict]) -> list[dict]:
-    if not rows:
-        return rows
-    needs_enrichment = False
-    for row in rows:
-        if any((col not in row) for col in _CONTACT_ENRICH_COLUMNS):
-            needs_enrichment = True
-            break
-    if not needs_enrichment:
-        return rows
-
-    apns = [str(r.get("apn")) for r in rows if r.get("apn")]
-    contact_map = _fetch_bill_contact_fields_for_apns(apns)
-    for row in rows:
-        apn = str(row.get("apn") or "")
-        extras = contact_map.get(apn, {})
-        if not extras:
-            continue
-        for col in _CONTACT_ENRICH_COLUMNS:
-            if col not in row or row.get(col) is None:
-                row[col] = extras.get(col)
-    return rows
-
-
-def _fetch_all_rows_for_filtered_payload(payload: dict[str, Any], normalized_research: str) -> list[dict]:
-    scan_payload = dict(payload)
-    scan_payload["p_limit"] = 200
-    scan_payload["p_offset"] = 0
-    rows_out: list[dict] = []
-    scanned = 0
-    allowed_apns: set[str] | None = None
-    use_research_param = bool(normalized_research)
-
-    while True:
-        query_payload = dict(scan_payload)
-        if use_research_param:
-            query_payload["p_research"] = normalized_research
-        try:
-            scan_r = _execute_get_bills_filtered_rpc(query_payload)
-        except Exception as exc:
-            if not use_research_param and _is_get_bills_filtered_ambiguous_error(exc):
-                use_research_param = True
-                continue
-            if use_research_param:
-                use_research_param = False
-                allowed_apns = _get_apns_for_research_filter(normalized_research)
-                if not allowed_apns:
-                    return []
-                continue
-            raise
-
-        rows_chunk, total_chunk = _parse_get_bills_filtered_response(scan_r.data)
-        if not rows_chunk:
-            break
-        if allowed_apns is not None:
-            rows_chunk = [row for row in rows_chunk if row.get("apn") in allowed_apns]
-        rows_out.extend(rows_chunk)
-        scanned += len(rows_chunk)
-        scan_payload["p_offset"] += 200
-        if scan_payload["p_offset"] >= total_chunk:
-            break
-
-    return rows_out
-
-
-def _sort_rows_by_contact_field(rows: list[dict], sort: str, order: str) -> list[dict]:
-    reverse = (order or "").lower() == "desc"
-    key_col = "primary_resident_age" if sort == "primary_resident_age" else "deceased_count"
-    present: list[tuple[int, dict]] = []
-    missing: list[dict] = []
-    for row in rows:
-        n = _first_int(row.get(key_col))
-        if n is None:
-            missing.append(row)
-        else:
-            present.append((n, row))
-    present.sort(key=lambda item: item[0], reverse=reverse)
-    return [row for _, row in present] + missing
-
-
 _DIRECT_BILL_COLUMNS = (
     "apn",
     "added_at",
@@ -682,10 +389,6 @@ _DIRECT_BILL_COLUMNS = (
 )
 
 
-def _escape_postgrest_like(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("%", "\\%").replace(",", "\\,")
-
-
 def _parse_row_json_value(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
@@ -698,182 +401,42 @@ def _parse_row_json_value(value: Any) -> dict[str, Any]:
     return {}
 
 
-def _attach_parcel_row_json(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    apns = [str(row.get("apn") or "") for row in rows if row.get("apn")]
-    if not apns:
-        return rows
+_CONDITION_BUCKETS = {
+    # Thresholds carried over verbatim from the retired get_bills_filtered RPC
+    # so the UI's "good / fair / poor" keep meaning the same thing.
+    "good": [("condition_score", "gte.7")],
+    "fair": [("condition_score", "gte.4"), ("condition_score", "lt.7")],
+    "poor": [("condition_score", "lt.4")],
+    "unscored": [("condition_score", "is.null")],
+}
 
-    parcel_map: dict[str, Any] = {}
-    chunk_size = 100
-    for index in range(0, len(apns), chunk_size):
-        chunk = apns[index : index + chunk_size]
-        result = get_client().table("parcels").select("apn,row_json").in_("apn", chunk).execute()
-        for parcel_row in (result.data or []):
-            apn = str(parcel_row.get("apn") or "")
-            if apn:
-                parcel_map[apn] = parcel_row.get("row_json")
-
-    for row in rows:
-        apn = str(row.get("apn") or "")
-        row["row_json"] = parcel_map.get(apn)
-        row.setdefault("added_at", None)
-
-    return rows
+# map_markers column -> the bills column name callers already use.
+_VIEW_TO_BILL_KEYS = {
+    "location": "location_of_property",
+    "lat": "lat",
+    "lng": "lng",
+}
 
 
-def _row_matches_basic_fallback_filters(
-    row: dict[str, Any],
-    q: str = "",
-    zip_filter: str = "",
-    owner_name_filter: str = "",
-    outofstate_filter: str = "",
-) -> bool:
-    query = (q or "").strip().lower()
-    if query:
-        haystacks = (
-            str(row.get("location_of_property") or "").lower(),
-            str(row.get("apn") or "").lower(),
-            str(row.get("owner_name") or "").lower(),
-        )
-        if not any(query in haystack for haystack in haystacks):
-            return False
+def _view_row_to_bill_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Reshape a map_markers row into the bills-shaped dict callers expect.
 
-    owner_name = (owner_name_filter or "").strip().lower()
-    if owner_name and owner_name not in str(row.get("owner_name") or "").lower():
-        return False
-
-    zip_tokens = [token.strip().lower() for token in (zip_filter or "").split(",") if token.strip()]
-    if zip_tokens:
-        apn = str(row.get("apn") or "").lower()
-        location = str(row.get("location_of_property") or "").lower()
-        if not any(apn.startswith(token) or token in location for token in zip_tokens):
-            return False
-
-    if (outofstate_filter or "").strip() == "1":
-        parcel = _parse_row_json_value(row.get("row_json"))
-        mail_state = str(parcel.get("MailState") or "").strip().upper()
-        if not mail_state or mail_state == "CA":
-            return False
-
-    return True
-
-
-def _fallback_sort_key(value: Any) -> tuple[int, Any]:
-    if value is None:
-        return (1, "")
-    if isinstance(value, (int, float)):
-        return (0, value)
-    return (0, str(value).lower())
-
-
-def _sort_fallback_rows(rows: list[dict[str, Any]], sort: str, order: str) -> list[dict[str, Any]]:
-    sort_col = (sort or "location_of_property").strip()
-    if sort_col == "added_at":
-        sort_col = "location_of_property"
-    reverse = (order or "").lower() == "desc"
-    return sorted(rows, key=lambda row: _fallback_sort_key(row.get(sort_col)), reverse=reverse)
-
-
-def _fetch_bills_direct_fallback(
-    q: str = "",
-    zip_filter: str = "",
-    power_filter: str = "",
-    fav_filter: str = "",
-    city_filter: str = "",
-    vpt_filter: str = "",
-    delinquent_filter: str = "",
-    condition_filter: str = "",
-    outofstate_filter: str = "",
-    research_filter: str = "",
-    owner_name_filter: str = "",
-    sort: str = "location_of_property",
-    order: str = "asc",
-    page: int = 1,
-    page_size: int = 25,
-) -> tuple[list[dict], int]:
-    client = get_client()
-    rows: list[dict[str, Any]] = []
-    batch_size = 500
-    offset = 0
-    favorites_apns = get_favorites_apns() if (fav_filter or "").strip() == "1" else []
-    if (fav_filter or "").strip() == "1" and not favorites_apns:
-        return [], 0
-
-    normalized_research = _normalize_research_filter(research_filter)
-    direct_columns = ",".join(_DIRECT_BILL_COLUMNS)
-
-    while True:
-        query = client.table("bills").select(direct_columns).range(offset, offset + batch_size - 1)
-        if (power_filter or "").strip():
-            query = query.eq("power_status", (power_filter or "").strip())
-        if (city_filter or "").strip():
-            query = query.eq("city", (city_filter or "").strip().upper())
-        if (vpt_filter or "").strip() == "1":
-            query = query.eq("has_vpt", 1)
-        if (delinquent_filter or "").strip() == "1":
-            query = query.eq("delinquent", 1)
-        if favorites_apns:
-            query = query.in_("apn", favorites_apns)
-
-        condition_value = (condition_filter or "").strip().lower()
-        if condition_value == "good":
-            query = query.gte("condition_score", 7)
-        elif condition_value == "fair":
-            query = query.gte("condition_score", 4).lt("condition_score", 7)
-        elif condition_value == "poor":
-            query = query.lt("condition_score", 4)
-        elif condition_value == "unscored":
-            query = query.is_("condition_score", "null")
-
-        if normalized_research == "unchecked":
-            query = query.or_("research_status.is.null,research_status.eq.unchecked")
-        elif normalized_research:
-            query = query.eq("research_status", normalized_research)
-
-        result = query.execute()
-        chunk = list(result.data or [])
-        if not chunk:
-            break
-        rows.extend(chunk)
-        if len(chunk) < batch_size:
-            break
-        offset += batch_size
-
-    # Only fetch heavy row_json upfront when outofstate filter needs it
-    need_row_json_early = (outofstate_filter or "").strip() == "1"
-    if need_row_json_early:
-        rows = _attach_parcel_row_json(rows)
-
-    rows = [
-        row
-        for row in rows
-        if _row_matches_basic_fallback_filters(
-            row,
-            q=q,
-            zip_filter=zip_filter,
-            owner_name_filter=owner_name_filter,
-            outofstate_filter=outofstate_filter,
-        )
-    ]
-    rows = _sort_fallback_rows(rows, sort=sort, order=order)
-    total = len(rows)
-
-    if page_size == 0:
-        if not need_row_json_early:
-            rows = _attach_parcel_row_json(rows)
-        return rows, total
-
-    limit = min(max(int(page_size), 10), 200)
-    page_number = max(int(page), 1)
-    start = (page_number - 1) * limit
-    end = start + limit
-    paged_rows = rows[start:end]
-
-    if not need_row_json_early:
-        paged_rows = _attach_parcel_row_json(paged_rows)
-
-    paged_rows = _enrich_rows_with_contact_fields(paged_rows)
-    return paged_rows, total
+    Six Flask routes consume these rows and index them by bills column names,
+    so the view's renames are undone here rather than at each call site. The
+    synthesized row_json carries only the parcel fields the templates read; the
+    full blob is no longer fetched, since coordinates now come from lat/lng.
+    """
+    out = dict(row)
+    for view_key, bill_key in _VIEW_TO_BILL_KEYS.items():
+        if view_key in out and view_key != bill_key:
+            out[bill_key] = out.pop(view_key)
+    out["row_json"] = {
+        "MailingAddress": row.get("mailing_address"),
+        "SitusAddress": row.get("situs_address"),
+        "SitusZip": row.get("situs_zip"),
+        "SitusCity": row.get("city"),
+    }
+    return out
 
 
 def get_bills_with_parcels_filtered(
@@ -893,101 +456,61 @@ def get_bills_with_parcels_filtered(
     page: int = 1,
     page_size: int = 25,
 ) -> tuple[list[dict], int]:
-    """Returns (rows, total). Uses Supabase RPC get_bills_filtered."""
-    if page_size == 0:
-        limit = 1000000
-        offset = 0
-    else:
-        limit = min(max(int(page_size), 10), 200)
-        offset = (max(int(page), 1) - 1) * limit
-    payload = {
-        "p_q": (q or "").strip() or None,
-        "p_zip": (zip_filter or "").strip() or None,
-        "p_power": (power_filter or "").strip() or None,
-        "p_fav": 1 if (fav_filter or "").strip() == "1" else None,
-        "p_city": (city_filter or "").strip().upper() or None,
-        "p_vpt": 1 if (vpt_filter or "").strip() == "1" else None,
-        "p_delinquent": 1 if (delinquent_filter or "").strip() == "1" else None,
-        "p_condition": (condition_filter or "").strip() or None,
-        "p_outofstate": 1 if (outofstate_filter or "").strip() == "1" else None,
-        "p_sort": ((sort or "location_of_property").strip() if (sort or "location_of_property").strip() in _RPC_SORT_COLUMNS else "location_of_property"),
-        "p_order": (order or "asc").strip(),
-        "p_limit": limit,
-        "p_offset": offset,
-        "p_research": _normalize_research_filter(research_filter) or None,
-    }
-    try:
-        r = _execute_get_bills_filtered_rpc(payload, owner_name_filter=owner_name_filter)
-    except Exception as exc:
-        if _is_get_bills_filtered_missing_added_at_error(exc) or _is_rpc_auth_error(exc):
-            return _fetch_bills_direct_fallback(
-                q=q,
-                zip_filter=zip_filter,
-                power_filter=power_filter,
-                fav_filter=fav_filter,
-                city_filter=city_filter,
-                vpt_filter=vpt_filter,
-                delinquent_filter=delinquent_filter,
-                condition_filter=condition_filter,
-                outofstate_filter=outofstate_filter,
-                research_filter=research_filter,
-                owner_name_filter=owner_name_filter,
-                sort=sort,
-                order=order,
-                page=page,
-                page_size=page_size,
-            )
-        raise
+    """Returns (rows, total), reading the map_markers view.
 
-    rows, total = _parse_get_bills_filtered_response(r.data)
-    rows = _enrich_rows_with_contact_fields(rows)
+    Replaces the get_bills_filtered RPC, which took 15 scalar parameters to
+    reimplement filtering PostgREST already does, and which the 2026-08-07
+    baseline schema dropped.
+    """
+    query = get_client().table("map_markers").select("*", count="exact")
+
+    term = (q or "").strip()
+    if term:
+        query = query.or_(f"apn.ilike.*{term}*,location.ilike.*{term}*")
+    city = (city_filter or "").strip().upper()
+    if city:
+        query = query.eq("city", city)
+    zips = [z.strip() for z in (zip_filter or "").split(",") if z.strip()]
+    if zips:
+        query = query.in_("situs_zip", zips)
+    power = (power_filter or "").strip()
+    if power:
+        query = query.eq("power_status", power)
+    research = (research_filter or "").strip()
+    if research:
+        query = query.eq("research_status", research)
+    owner = (owner_name_filter or "").strip()
+    if owner:
+        query = query.ilike("owner_name", f"*{owner}*")
+    if (vpt_filter or "").strip() == "1":
+        query = query.eq("has_vpt", 1)
+    if (delinquent_filter or "").strip() == "1":
+        query = query.eq("delinquent", 1)
+    if (fav_filter or "").strip() == "1":
+        query = query.is_("is_favorite", True)
+    if (outofstate_filter or "").strip() == "1":
+        query = query.is_("is_out_of_state", True)
+    for column, expr in _CONDITION_BUCKETS.get((condition_filter or "").strip().lower(), []):
+        op, _, value = expr.partition(".")
+        if op == "is":
+            query = query.is_(column, None)
+        elif op == "gte":
+            query = query.gte(column, float(value))
+        elif op == "lt":
+            query = query.lt(column, float(value))
+
+    sort_column = {"location_of_property": "location", "latitude": "lat", "longitude": "lng"}.get(sort, sort)
+    query = query.order(sort_column, desc=(order or "asc").lower() == "desc")
+
+    # page_size == 0 means "everything"; PostgREST still needs an explicit range.
+    if page_size and page_size > 0:
+        offset = max(page - 1, 0) * page_size
+        query = query.range(offset, offset + page_size - 1)
+
+    r = query.execute()
+    rows = [_view_row_to_bill_row(row) for row in (r.data or [])]
+    total = r.count if r.count is not None else len(rows)
     return rows, total
-
-
-def get_bills_for_map(
-    q: str = "",
-    zip_filter: str = "",
-    power_filter: str = "",
-    fav_filter: str = "",
-    city_filter: str = "",
-    vpt_filter: str = "",
-    delinquent_filter: str = "",
-    owner_name_filter: str = "",
-) -> list[dict]:
-    payload = {
-        "p_q": (q or "").strip() or None,
-        "p_zip": (zip_filter or "").strip() or None,
-        "p_power": (power_filter or "").strip() or None,
-        "p_fav": 1 if (fav_filter or "").strip() == "1" else None,
-        "p_city": (city_filter or "").strip().upper() or None,
-        "p_vpt": 1 if (vpt_filter or "").strip() == "1" else None,
-        "p_delinquent": 1 if (delinquent_filter or "").strip() == "1" else None,
-    }
-    r = get_client().rpc("get_bills_for_map", payload).execute()
-    if not r.data:
-        return []
-    data = r.data
-    # RPC can return: [{"get_bills_for_map": [...]}], {"get_bills_for_map": [...]}, or [...] (array of bills)
-    if isinstance(data, list) and len(data) > 0:
-        first = data[0]
-        if isinstance(first, dict) and "get_bills_for_map" in first:
-            out = first["get_bills_for_map"]
-            rows = out if isinstance(out, list) else []
-        elif isinstance(first, dict) and "apn" in first:
-            rows = data
-        else:
-            rows = []
-        # First item is a bill row (has "apn") - data is already the list of bills
-    elif isinstance(data, dict) and "get_bills_for_map" in data:
-        out = data["get_bills_for_map"]
-        rows = out if isinstance(out, list) else []
-    else:
-        rows = data if isinstance(data, list) else []
-
-    rows = _enrich_rows_with_contact_fields(rows)
-    return rows
-
-
 def get_bills_count_where(**kwargs: Any) -> int:
     """Run a simple count on bills with optional .eq filters. kwargs are column=value."""
     q = get_client().table("bills").select("apn", count="exact")
@@ -996,7 +519,6 @@ def get_bills_count_where(**kwargs: Any) -> int:
             q = q.eq(key, val)
     r = q.limit(1).execute()
     return r.count or 0
-
 
 
 def get_bills_missing_location() -> list[tuple[str, str]]:
@@ -1280,7 +802,7 @@ def _fetch_list_property_context(list_id: int) -> list[dict[str, Any]]:
         get_client()
         .table("bills")
         .select(
-            "apn, location_of_property, city, has_vpt, condition_score, streetview_image_path, power_status, delinquent, deceased_count"
+            "apn, location_of_property, city, has_vpt, condition_score, streetview_image_path, power_status, delinquent, deceased_count, lat, lng"
         )
         .in_("apn", apns)
         .execute()
@@ -1307,7 +829,13 @@ def _fetch_list_property_context(list_id: int) -> list[dict[str, Any]]:
             continue
         bill = bill_map.get(apn, {})
         row_json = parcel_map.get(apn)
-        lat, lng = _extract_lat_lng_from_row_json(row_json)
+        # bills.lat/lng is authoritative — it feeds the geom column that
+        # scout_next() orders by, so routes and the scouting queue agree. Fall
+        # back to the parcel centroid only for rows written before
+        # find_meas_w_addresses.py started storing coordinates inline.
+        lat, lng = bill.get("lat"), bill.get("lng")
+        if lat is None or lng is None:
+            lat, lng = _extract_lat_lng_from_row_json(row_json)
         parcel = row_json if isinstance(row_json, dict) else _parse_row_json_value(row_json)
         badges = []
         if bill.get("has_vpt") in (1, True, "1"):

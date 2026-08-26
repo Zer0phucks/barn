@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import sys
 import unittest
-from unittest.mock import patch
 from pathlib import Path
+from unittest.mock import patch
 
 SCAN_DIR = Path(__file__).resolve().parents[1]
 if str(SCAN_DIR) not in sys.path:
@@ -12,33 +12,62 @@ if str(SCAN_DIR) not in sys.path:
 import db
 
 
-class _FakeRpcResponse:
-    data = [{"rows": [], "total": 0}]
+class _FakeQuery:
+    """Records the PostgREST builder calls get_bills_with_parcels_filtered makes."""
 
+    def __init__(self, log: dict) -> None:
+        self._log = log
 
-class _FakeRpcCall:
+    def _record(self, name, *args, **kwargs):
+        self._log.setdefault(name, []).append((args, kwargs))
+        return self
+
+    def __getattr__(self, name):
+        return lambda *args, **kwargs: self._record(name, *args, **kwargs)
+
     def execute(self):
-        return _FakeRpcResponse()
+        return type("R", (), {"data": [], "count": 0})()
 
 
 class _FakeClient:
     def __init__(self) -> None:
-        self.payload = None
+        self.log: dict = {}
+        self.table_name = None
 
-    def rpc(self, name, payload):
-        self.payload = {"name": name, "payload": payload}
-        return _FakeRpcCall()
+    def table(self, name):
+        self.table_name = name
+        return _FakeQuery(self.log)
 
 
 class AddedAtSortTests(unittest.TestCase):
-    def test_added_at_is_allowed_and_forwarded_to_rpc(self) -> None:
-        fake_client = _FakeClient()
+    """`added_at` is a real bills column, so sorting by it must reach the database
+    rather than being silently dropped or sorted client-side."""
 
-        with patch("db.get_client", return_value=fake_client), patch(
-            "db._enrich_rows_with_contact_fields", side_effect=lambda rows: rows
-        ):
-            db.get_bills_with_parcels_filtered(sort="added_at", order="desc", page=1, page_size=25)
+    def _run(self, **kwargs):
+        client = _FakeClient()
+        with patch("db.get_client", return_value=client):
+            db.get_bills_with_parcels_filtered(page=1, page_size=25, **kwargs)
+        return client
 
-        self.assertEqual("get_bills_filtered", fake_client.payload["name"])
-        self.assertEqual("added_at", fake_client.payload["payload"]["p_sort"])
-        self.assertEqual("desc", fake_client.payload["payload"]["p_order"])
+    def test_added_at_sort_is_forwarded_to_the_view(self) -> None:
+        client = self._run(sort="added_at", order="desc")
+        self.assertEqual("map_markers", client.table_name)
+        args, kwargs = client.log["order"][0]
+        self.assertEqual("added_at", args[0])
+        self.assertTrue(kwargs["desc"])
+
+    def test_ascending_order_is_respected(self) -> None:
+        client = self._run(sort="added_at", order="asc")
+        _, kwargs = client.log["order"][0]
+        self.assertFalse(kwargs["desc"])
+
+    def test_bills_sort_keys_are_translated_to_view_columns(self) -> None:
+        # The view renames location_of_property -> location; callers still use
+        # the bills name, so ordering by it must not 400.
+        client = self._run(sort="location_of_property", order="asc")
+        args, _ = client.log["order"][0]
+        self.assertEqual("location", args[0])
+
+
+if __name__ == "__main__":
+    unittest.main()
