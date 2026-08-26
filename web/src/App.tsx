@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -10,14 +9,11 @@ import ReportProperty from "./pages/ReportProperty";
 import RegisterProperty from "./pages/RegisterProperty";
 import Volunteer from "./pages/Volunteer";
 import ApplyHousing from "./pages/ApplyHousing";
+import AdminLogin from "./pages/AdminLogin";
+import AdminDashboard from "./pages/AdminDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
-
-const ExternalRedirect = ({ to }: { to: string }) => {
-  useEffect(() => { window.location.href = to; }, [to]);
-  return <div style={{padding:'40px',textAlign:'center',color:'#666'}}>Redirecting…</div>;
-};
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -32,8 +28,8 @@ const App = () => (
           <Route path="/register-property" element={<RegisterProperty />} />
           <Route path="/volunteer" element={<Volunteer />} />
           <Route path="/apply-housing" element={<ApplyHousing />} />
-          <Route path="/admin" element={<ExternalRedirect to="https://app.barnhousing.org" />} />
-          <Route path="/admin/dashboard" element={<ExternalRedirect to="https://app.barnhousing.org" />} />
+          <Route path="/admin" element={<AdminLogin />} />
+          <Route path="/admin/dashboard" element={<AdminDashboard />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

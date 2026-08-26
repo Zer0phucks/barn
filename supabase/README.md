@@ -5,10 +5,10 @@ Supabase project **`barn`** — `ndjqmzfqifafsuygdqdz`, created 2026-08-07.
 `migrations/` is a **clean-slate baseline**, not an incremental history. It
 replaces two schemas that were never reconciled and are both retired:
 
-| Retired | Was | Fate |
-|---|---|---|
-| `scan/db_migrations/*.sql` | 12 unversioned files applied by hand in the SQL editor | folded in here |
-| `barn-scan` repo's `supabase/migrations/` | the PostGIS scouting layer | folded in here |
+| Retired                                       | Was                                                    | Fate           |
+| --------------------------------------------- | ------------------------------------------------------ | -------------- |
+| `scan/db_migrations/*.sql`                  | 12 unversioned files applied by hand in the SQL editor | folded in here |
+| `barn-scan` repo's `supabase/migrations/` | the PostGIS scouting layer                             | folded in here |
 
 Those targeted older projects (`nrfbgtmbginpcdxmttrq`, `vzgmmlaojvkpbakvgcwh`,
 `kawsyqariasjpzlrrkcc`), all of which predate this one and hold no data worth
@@ -34,14 +34,14 @@ npx supabase db diff --linked      # should print nothing
 
 ## Layout
 
-| File | Contents |
-|---|---|
-| `20260807000001_extensions.sql` | postgis, pgcrypto |
-| `20260807000002_core_property_tables.sql` | `parcels`, `bills` (57 cols), geom trigger, indexes |
-| `20260807000003_scouting.sql` | `lists`, `list_properties`, `scout_results` |
-| `20260807000004_research_outreach_worker_state.sql` | `cbc_image_extractions`, `outreach*`, `scanner_*` |
-| `20260807000005_views_and_rpcs.sql` | `map_markers` view, `scout_next()`, route-queue RPCs |
-| `20260807000006_rls_and_storage.sql` | RLS policies, `streetview-images` bucket |
+| File                                                  | Contents                                                 |
+| ----------------------------------------------------- | -------------------------------------------------------- |
+| `20260807000001_extensions.sql`                     | postgis, pgcrypto                                        |
+| `20260807000002_core_property_tables.sql`           | `parcels`, `bills` (57 cols), geom trigger, indexes  |
+| `20260807000003_scouting.sql`                       | `lists`, `list_properties`, `scout_results`        |
+| `20260807000004_research_outreach_worker_state.sql` | `cbc_image_extractions`, `outreach*`, `scanner_*`  |
+| `20260807000005_views_and_rpcs.sql`                 | `map_markers` view, `scout_next()`, route-queue RPCs |
+| `20260807000006_rls_and_storage.sql`                | RLS policies,`streetview-images` bucket                |
 
 ## Design decisions
 
