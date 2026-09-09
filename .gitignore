@@ -18,3 +18,5 @@ web/dist/
 
 # Git worktrees
 .worktrees/
+.vercel
+.env*

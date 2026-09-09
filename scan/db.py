@@ -587,16 +587,19 @@ def update_bill_ai_vacancy(
 
 
 # ---------------------------------------------------------------------------
-# Results (apn, pdf_file) - for run_all ensure_cache_in_db
+# Legacy result helpers. The old `results` table was replaced by `bills`.
+# Keep these function names for existing callers, but use the current schema.
 # ---------------------------------------------------------------------------
 
 def get_results_apns() -> set[str]:
-    r = get_client().table("results").select("apn").execute()
+    r = get_client().table("bills").select("apn").execute()
     return {row["apn"] for row in (r.data or []) if row.get("apn")}
 
 
 def upsert_result(apn: str, pdf_file: str | None = None) -> None:
-    get_client().table("results").upsert({"apn": apn, "pdf_file": pdf_file or ""}).execute()
+    # `bills` is populated by upsert_bill; there is no separate result row in
+    # the current Supabase schema. Keep this as a compatibility no-op.
+    return None
 
 
 # ---------------------------------------------------------------------------

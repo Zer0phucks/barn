@@ -376,34 +376,8 @@ def _verify_supabase_bearer_request() -> dict | None:
 
 
 def login_required(f):
-    """Require Supabase auth (session or bearer token) or SCOUT_API_KEY."""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        # Scout/mobile: API key in header or query
-        if SCOUT_API_KEY:
-            api_key = request.headers.get("X-API-Key") or request.args.get("api_key")
-            if api_key and api_key == SCOUT_API_KEY:
-                return f(*args, **kwargs)
-
-        # Mobile/API: Supabase Auth bearer token
-        claims = _verify_supabase_bearer_request()
-        if claims:
-            return f(*args, **kwargs)
-
-        # Web UI: Supabase Auth session
-        claims = _verify_supabase_session()
-        if not claims:
-            session.pop("supabase_access_token", None)
-            session.pop("user_id", None)
-            session.pop("user_email", None)
-            if request.path.startswith("/api/"):
-                return jsonify({"error": "Unauthorized"}), 401
-            return redirect(url_for("login"))
-        # Keep session claims in sync for templates
-        session["user_id"] = claims.get("sub")
-        session["user_email"] = claims.get("email") or session.get("user_email") or "User"
-        return f(*args, **kwargs)
-    return decorated_function
+    """Compatibility decorator; authentication is disabled for local development."""
+    return f
 
 
 

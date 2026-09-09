@@ -19,7 +19,8 @@ from dotenv import load_dotenv
 
 # Load environment variables from .env (if present) BEFORE importing
 # modules that read configuration from os.environ (e.g. scanner).
-load_dotenv()
+BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env")
 
 from webgui import app as webapp
 import find_meas_w_addresses as scanner
@@ -27,7 +28,6 @@ import intake_autopilot
 import pge_scanner
 import db
 
-BASE_DIR = Path(__file__).resolve().parent
 # Main parcels CSV from Alameda County (see README)
 CSV_PATH = intake_autopilot.canonical_parcels_path()
 

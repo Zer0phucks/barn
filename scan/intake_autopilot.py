@@ -22,6 +22,7 @@ import find_meas_w_addresses as vpt_scanner
 BASE_DIR = Path(__file__).resolve().parent
 PARCELS_CSV_PATH = BASE_DIR / "parcels.csv"
 LEGACY_PARCELS_CSV_PATH = BASE_DIR / "Parcels_5567367248157875843.csv"
+PARCELS_CSV_ENV_VAR = "PARCELS_CSV_PATH"
 BACKLOG_LOCK_PATH = BASE_DIR / ".parcels.csv.lock"
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,12 @@ class IntakeResult:
 
 
 def canonical_parcels_path() -> Path:
+    configured_path = os.environ.get(PARCELS_CSV_ENV_VAR, "").strip()
+    if configured_path:
+        path = Path(configured_path).expanduser()
+        if not path.is_absolute():
+            path = BASE_DIR / path
+        return path
     if PARCELS_CSV_PATH.exists():
         return PARCELS_CSV_PATH
     return LEGACY_PARCELS_CSV_PATH
