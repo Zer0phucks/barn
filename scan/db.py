@@ -1461,14 +1461,32 @@ def bulk_delete_bills(apns: list[str]) -> int:
 
 
 def get_distinct_zips() -> list[str]:
-    """Fetch distinct zip codes from parcels."""
-    r = get_client().rpc("get_distinct_zips").execute()
-    data = r.data
-    if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict) and "distinct_zip" in data[0]:
-        return [row["distinct_zip"] for row in data]
-    elif isinstance(data, list) and all(isinstance(x, str) for x in data):
-        return data
-    return []
+    """Fetch distinct situs zip codes, the values the /search zip filter matches.
+
+    The get_distinct_zips RPC this used to call is not part of the baseline
+    schema, so the view is scanned instead.
+    """
+    zips: set[str] = set()
+    offset = 0
+    page_size = 1000
+    while True:
+        r = (
+            get_client()
+            .table("map_markers")
+            .select("situs_zip")
+            .not_.is_("situs_zip", "null")
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        rows = r.data or []
+        for row in rows:
+            z = str(row.get("situs_zip") or "").strip()
+            if z:
+                zips.add(z)
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return sorted(zips)
 
 
 def get_distinct_cities() -> list[str]:

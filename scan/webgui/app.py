@@ -500,7 +500,6 @@ def search_page():
         "parcel_number",
         "tracer_number",
         "tax_year",
-        "pdf_file",
         "situs_zip",
         "last_payment",
         "delinquent",
@@ -508,7 +507,6 @@ def search_page():
         "city",
         "has_vpt",
         "condition_score",
-        "primary_resident_age",
         "deceased_count",
         "outreach_score",
     }
@@ -581,7 +579,8 @@ def search_page():
         apn = r["apn"]
         display.append(
             {
-                "pdf_file": r["pdf_file"],
+                # map_markers carries neither pdf_file nor condition_notes.
+                "pdf_file": r.get("pdf_file"),
                 "bill_url": r["bill_url"] or "",
                 "apn": apn,
                 "added_at": r.get("added_at"),
@@ -600,7 +599,7 @@ def search_page():
                 "situs_address": parcel.get("SitusAddress") or "",
                 "situs_city": parcel.get("SitusCity") or "",
                 "situs_zip": r["situs_zip"] or "",
-                "pdf_url": f"/pdf/{r['pdf_file']}" if r["pdf_file"] else "",
+                "pdf_url": f"/pdf/{r['pdf_file']}" if r.get("pdf_file") else "",
                 "bill_url": r["bill_url"] or "",
                 "maps_url": (
                     f"https://www.google.com/maps/search/?api=1&query="
@@ -609,7 +608,7 @@ def search_page():
                     else ""
                 ),
                 "condition_score": r["condition_score"],
-                "condition_notes": r["condition_notes"] or "",
+                "condition_notes": r.get("condition_notes") or "",
                 "streetview_image_path": r["streetview_image_path"] or "",
                 "property_search_url": r.get("property_search_url") or "",
                 "mailing_search_url": r.get("mailing_search_url") or "",
@@ -787,7 +786,7 @@ def gallery_page():
                 "has_vpt": "Yes" if (r["has_vpt"] or 0) == 1 else "No",
                 "delinquent": "Yes" if (r["delinquent"] or 0) == 1 else "No",
                 "condition_score": r["condition_score"],
-                "condition_notes": r["condition_notes"] or "",
+                "condition_notes": r.get("condition_notes") or "",
                 "is_favorite": apn in favorites_set,
                 "prop_last_sale_date": r.get("prop_last_sale_date") or "",
                 "owner_name": r.get("owner_name") or "",

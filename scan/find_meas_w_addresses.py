@@ -70,6 +70,12 @@ CHROME_PATH = "/usr/bin/google-chrome"
 
 
 def get_input_csv_path() -> Path:
+    configured_path = os.environ.get("PARCELS_CSV_PATH", "").strip()
+    if configured_path:
+        path = Path(configured_path).expanduser()
+        if not path.is_absolute():
+            path = BASE_DIR / path
+        return path
     if INPUT_CSV.exists():
         return INPUT_CSV
     return LEGACY_INPUT_CSV
