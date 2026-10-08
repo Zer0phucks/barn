@@ -22,3 +22,37 @@ Recent history follows Conventional Commit prefixes such as `feat:`, `fix:`, `do
 
 ## Security & Configuration Tips
 Never commit `.env` files, Supabase keys, `MAPS_API_KEY`, or deploy SSH secrets. Scanner setup may require `playwright install chromium` after dependency changes. Android local secrets belong in `android/local.properties`; web and scan secrets belong in local `.env` files.
+
+## Cursor Cloud specific instructions
+
+Standard build/test/run commands live in the sections above and in `web/README.md` / `scan/README.md`; the notes below only capture what is non-obvious for this cloud environment.
+
+### Backend: both apps are thin clients over Supabase
+`web/` and `scan/` do almost nothing without a Supabase backend (Postgres + Auth + PostgREST). For local dev we run a local Supabase stack via Docker. The dependency update script only refreshes JS/Python deps — it does NOT start Docker, Supabase, or the dev servers. Start those yourself each VM boot:
+
+- Start the Docker daemon (not auto-started): `sudo dockerd > /tmp/dockerd.log 2>&1 &` then `sudo chmod 666 /var/run/docker.sock` (or re-login so the `docker` group applies).
+- Start Supabase (from `web/`, which holds `supabase/config.toml` + migrations): `cd web && supabase start`. This applies `web/supabase/migrations` and prints URL/keys (API on `http://127.0.0.1:54321`, DB on `:54322`, Studio on `:54323`).
+- The env files `web/.env.local` and `scan/.env` are gitignored and already point at the local stack using the standard Supabase local demo keys. `web/` reads `VITE_SUPABASE_PUBLISHABLE_KEY` (NOT `VITE_SUPABASE_ANON_KEY`, despite `web/.env.example`).
+
+### GOTCHA: grant DML after `supabase start` (and after adding migrations)
+The local stack's default privileges grant `anon`/`authenticated` only `Dxtm` (no `SELECT/INSERT/UPDATE/DELETE`), so migration-created tables reject public form inserts with `permission denied for table` until you grant DML. Run once against the DB container after `supabase start`:
+
+```sql
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO anon, authenticated, service_role;
+```
+Apply with: `docker exec -i "$(docker ps --format '{{.Names}}' | grep supabase_db)" psql -U postgres -d postgres`.
+
+### Web RLS behavior (not a bug)
+Public forms (`property_reports`, `volunteers`, etc.) allow anon `INSERT` but only admins can `SELECT`. So `.insert()` works, but an anon `.insert().select()` / `Prefer: return=representation` fails RLS by design. The public form components correctly insert without selecting.
+
+### scan test suite: 3 known failures without production schema
+`python -m unittest discover -s tests` passes 55/58. The 3 `test_gallery_city_filter` failures call `db.get_lists()` which needs base tables `lists`/`bills`/`parcels` that are NOT checked into the repo (only incremental migrations exist in `scan/db_migrations/`). They require a production-like Supabase schema and are expected to fail against the local stack.
+
+### Misc
+- `android/` is empty in this checkout — nothing to build/test there.
+- Playwright/PG&E power scanning is optional and disabled (`VPT_ENABLE_PGE=false`); no Chromium download is needed for lint/test/build/run.
+- Ports: web `8080`, scan Flask `5000`, Supabase API `54321` / DB `54322` / Studio `54323`.
