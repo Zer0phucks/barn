@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import csv
-import json
 import os
 import threading
 import time
@@ -56,50 +55,26 @@ scan_state = {
     "continuous_mode": False,
     "total_scanned": 0,
     "total_hits": 0,
+    "removed": 0,
+    "unflagged": 0,
 }
 
-
-def load_apn_rowjson(city: str | None = None) -> dict[str, str]:
-    apn_to_rowjson: dict[str, str] = {}
-    csv_path = scanner.get_input_csv_path(city=city)
-    if not csv_path.exists():
-        csv_path = intake_autopilot.canonical_parcels_path()
-    if csv_path.exists():
-        with csv_path.open(newline="", encoding="utf-8-sig", errors="replace") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                apn = (row.get("APN") or "").strip()
-                if not apn:
-                    continue
-                if apn not in apn_to_rowjson:
-                    apn_to_rowjson[apn] = json.dumps(row, ensure_ascii=True)
-    return apn_to_rowjson
+# Set from the command line; apply to every scan this process starts.
+scan_options = {"recheck_only": False, "dry_run": False}
 
 
-def get_db_apns() -> set[str]:
-    return db.get_results_apns()
+def _run_city_scan(city: str) -> None:
+    stats = scanner.main(city=city, **scan_options) or {}
+    scan_state["total_scanned"] += stats.get("scanned", 0)
+    scan_state["total_hits"] += stats.get("added", 0)
+    scan_state["removed"] += stats.get("removed", 0)
+    scan_state["unflagged"] += stats.get("unflagged", 0)
 
 
 def ensure_cache_in_db() -> None:
-    cache = scanner.load_cache()
-    apn_to_rowjson = load_apn_rowjson()
-    db_apns = get_db_apns()
-
-    for apn, entry in cache.items():
-        has_vpt = entry.get("has_vpt") or entry.get("has_meas_w")
-        is_delinquent = entry.get("is_delinquent", False)
-        if not has_vpt and not is_delinquent:
-            continue
-        if apn in db_apns:
-            continue
-        bill_url = entry.get("bill_url")
-        roll_year = entry.get("roll_year")
-        if not bill_url:
-            bill_url, roll_year = scanner.get_latest_bill_info(apn)
-        if not bill_url:
-            continue
-        bill_html = scanner.fetch_text(bill_url)
-        scanner.upsert_db(apn, bill_url, bill_html, apn_to_rowjson.get(apn))
+    # Cached bill URLs can't be re-fetched (the site serves bills per session),
+    # so cached VPT parcels missing from the DB are looked up again.
+    scanner.recheck_cached_positives(dry_run=scan_options["dry_run"])
 
 
 def get_cities_from_csv() -> list[str]:
@@ -156,7 +131,7 @@ def run_continuous_scan() -> None:
             print(f"{'='*60}")
             
             try:
-                scanner.main(city=city)
+                _run_city_scan(city)
                 scan_state["cities_completed"].append(city)
             except Exception as e:
                 print(f"Error scanning {city}: {e}")
@@ -185,7 +160,7 @@ def run_single_city_scan(city: str) -> None:
     scan_state["current_city"] = city_clean
 
     try:
-        scanner.main(city=city_clean)
+        _run_city_scan(city_clean)
         scan_state["cities_completed"].append(city_clean)
     except Exception as e:
         print(f"Error scanning {city_clean}: {e}")
@@ -227,6 +202,10 @@ def get_scan_state() -> dict:
         "continuous_mode": scan_state["continuous_mode"],
         "available_cities": get_cities_from_csv(),
         "mode": "legacy_scan" if scan_state["is_running"] else None,
+        "total_scanned": scan_state["total_scanned"],
+        "total_hits": scan_state["total_hits"],
+        "removed": scan_state["removed"],
+        "unflagged": scan_state["unflagged"],
     }
 
 
@@ -273,8 +252,9 @@ def main(
     print("Ensuring all cache positives are in DB...")
     ensure_cache_in_db()
 
-    print("Fixing entries with missing fields...")
-    scanner.fix_missing_fields()
+    if not scan_options["dry_run"]:
+        print("Fixing entries with missing fields...")
+        scanner.fix_missing_fields()
 
     # Decide whether to start PGE power scanner
     if enable_pge is None:
@@ -328,6 +308,10 @@ if __name__ == "__main__":
             enable_pge = False
         elif arg == "--pge-only":
             enable_pge = True
+        elif arg == "--recheck-only":
+            scan_options["recheck_only"] = True
+        elif arg == "--dry-run":
+            scan_options["dry_run"] = True
         elif arg == "--help":
             print("Usage: python run_all.py [options]")
             print("Options:")
@@ -335,6 +319,8 @@ if __name__ == "__main__":
             print("  --continuous       Continuously scan all cities in a loop")
             print("  --no-pge           Disable PGE power status scanner (VPT only)")
             print("  --pge-only         Force-enable PGE scanner (overrides env)")
+            print("  --recheck-only     Only re-check properties already in the DB (removes lapsed VPT)")
+            print("  --dry-run          Report what would be added/removed without changing the DB")
             print("  --help             Show this help")
             sys.exit(0)
     

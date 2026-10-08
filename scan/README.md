@@ -87,6 +87,12 @@ python intake_autopilot.py
 
 # Continuous scanning (all cities in loop)
 python run_all.py --continuous
+
+# Only re-check properties already in the DB (removes ones that stopped paying VPT)
+python find_meas_w_addresses.py --city=OAKLAND --recheck-only
+
+# See what a scan would add/remove without touching the DB
+python find_meas_w_addresses.py --city=OAKLAND --recheck-only --dry-run
 ```
 
 The web UI will be available at http://localhost:5000
@@ -161,7 +167,7 @@ Properties are stored in SQLite with the following key fields:
 | `location_of_property` | Property address                             |
 | `city`                 | City name                                    |
 | `has_vpt`              | 1 if property has VPT marker                 |
-| `vpt_marker`           | VPT marker text (e.g., "MEAS-W OAKLAND VPT") |
+| `vpt_marker`           | VPT marker and amount (e.g., "MEAS-W OAKLAND VPT $6,000.00") |
 | `delinquent`           | 1 if property is tax delinquent              |
 | `power_status`         | "on", "off", or "unknown"                    |
 | `last_payment`         | Date of last tax payment                     |
@@ -172,9 +178,31 @@ Properties are stored in SQLite with the following key fields:
 1. **Scanning**: Reads parcel data from CSV, queries Alameda County tax portal for each APN
 2. **VPT Detection**: Checks bill HTML for VPT markers (MEAS-W for Oakland, MEAS-M for Berkeley). **Only Oakland and Berkeley have VPT markers in the scanner;** other cities will show 0 VPT unless you add markers.
 3. **Delinquency Detection**: Looks for actual delinquency indicators (redemption amount, prior year amounts due, delinquent status, tax defaulted with date). If you see no delinquent results, the county bill wording may differ; set `VPT_DEBUG_DELINQUENCY=1` in `.env` and run a scan to log near-matches so patterns can be added.
-4. **Database Storage**: Only stores properties that have VPT OR are delinquent
+4. **Database Storage**: Only stores properties whose latest bill has a VPT charge ($6,000, or the $3,000 condo/duplex rate). Delinquent-only properties are no longer added.
 5. **Power Checking**: Uses Playwright to check PG&E website for power status
-6. **Caching**: Results cached in JSONL file to avoid re-fetching
+6. **Caching**: Verified lookups are cached in `measw_cache.jsonl`. A parcel is looked up again once a newer bill year is due (bills post each October), or after `VPT_RECHECK_DAYS` if its newest bill was older. Failed lookups are never cached.
+
+### Removal of lapsed properties
+
+Each scan first re-checks the properties already in the DB (rows with `has_vpt=1` or `delinquent=1`), then scans unchecked parcels. When a property's latest bill has no VPT charge:
+
+- it is **deleted** from `bills`, or
+- if it is curated (on a list/Favorites, has scout results or outreach), it is **kept** and set to `has_vpt=0`, because deleting would cascade to that work.
+
+Rows with neither flag (PG&E power-off promotions, CSV imports) are never touched. Nothing is removed unless the bill was fetched and its parcel number matches the APN. Every removal is appended to `vpt_removed.jsonl`. Use `--dry-run` to preview; `--force` ignores the cache.
+
+### Scan speed
+
+The county site rate-limits to roughly 15 lookups a minute per IP and answers "Request Rejected" beyond that (measured October 2026), so the scanner paces itself rather than running in parallel:
+
+| Variable                  | Default | Meaning                                                        |
+| ------------------------- | ------- | -------------------------------------------------------------- |
+| `VPT_LOOKUP_INTERVAL_SEC` | `5`     | Minimum seconds between lookups (3 s was rejected, 5 s was not) |
+| `VPT_MAX_WORKERS`         | `1`     | Browser workers; more does not help under the per-IP limit      |
+| `VPT_RECHECK_DAYS`        | `30`    | Re-check parcels whose newest bill is from an older year        |
+| `VPT_ROLL_YEAR`           | auto    | Override the current bill year                                  |
+
+At 12 lookups/min, re-checking ~2,000 DB properties takes about 3 hours and a first full pass over Oakland (~94,000 parcels) about 5.5 days; later runs in the same bill year only look up what is not cached. On a rejection the scan pauses, slows down for the rest of the run, and stops after 5 rejections in a row.
 
 ## API Endpoints
 

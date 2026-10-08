@@ -49,6 +49,7 @@ class IntakeResult:
     power_status: str
     promoted: bool
     row: dict[str, str]
+    bill_html: str = ""
 
 
 def canonical_parcels_path() -> Path:
@@ -114,13 +115,12 @@ def get_existing_bill_apns() -> set[str]:
 
 def upsert_promoted_parcel(result: IntakeResult) -> None:
     row_json = json.dumps(result.row, ensure_ascii=True)
-    bill_html = ""
-    if result.bill_url:
-        bill_html = vpt_scanner.fetch_text(result.bill_url)
+    # The bill URL can't be fetched again outside the lookup's browser session,
+    # so use the HTML captured during the lookup.
     vpt_scanner.upsert_db(
         result.apn,
         result.bill_url or "",
-        bill_html,
+        result.bill_html,
         row_json,
         power_status=result.power_status,
     )
@@ -166,6 +166,7 @@ async def evaluate_parcel(row: dict[str, str]) -> IntakeResult:
         power_status=power_status,
         promoted=promoted,
         row=row,
+        bill_html=tax_result.get("bill_html") or "",
     )
 
 

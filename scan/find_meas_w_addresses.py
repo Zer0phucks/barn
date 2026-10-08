@@ -1,31 +1,36 @@
 #!/usr/bin/env python3
 """
-Find mailing addresses tied to parcels with Measure W VPT charges.
+Keep the bills table in sync with parcels paying a Vacant Property Tax.
 
 Process:
-1) Read parcel CSV and collect APNs for Oakland situs parcels.
-2) For each APN, fetch latest bill and check for "MEAS-W OAKLAND VPT".
-3) Save a PDF copy of the bill in /home/noob/vpt/bandos.
+1) Re-check parcels already in the DB and remove the ones whose latest bill
+   no longer carries a VPT charge (curated properties are unflagged instead).
+2) Read the parcel CSV and check every parcel not yet looked up for the
+   current bill year; add the ones with a VPT charge.
 
-The script is resumable via a cache file to avoid re-checking APNs.
+Lookups are cached in measw_cache.jsonl so a run only hits the tax site for
+parcels that are unchecked or stale.
 """
 import csv
 import sys
 import html
 import json
+import queue
 import re
+import threading
 import time
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
 PdfReader = None
 
 BASE_DIR = Path(__file__).resolve().parent
 INPUT_CSV = BASE_DIR / "parcels.csv"
 LEGACY_INPUT_CSV = BASE_DIR / "Parcels_5567367248157875843.csv"
 CACHE_JSONL = BASE_DIR / "measw_cache.jsonl"
+# Audit trail of every property removed/unflagged by the scan (deletes are irreversible).
+REMOVED_JSONL = BASE_DIR / "vpt_removed.jsonl"
 
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
@@ -53,15 +58,26 @@ MEAS_M_MARKERS = [
 VPT_MARKERS = [MEAS_W_MARKER] + MEAS_M_MARKERS
 
 
-MAX_RETRIES = 3
-RETRY_BACKOFF_SEC = 1.5
-# Allow tuning via environment variables; fall back to safe defaults.
-REQUEST_DELAY_SEC = float(os.getenv("VPT_REQUEST_DELAY_SEC", "0.05"))  # polite pacing between requests
-MAX_WORKERS = int(os.getenv("VPT_MAX_WORKERS", "8"))
+# Browser workers. Each needs its own browser context because the tax site
+# keeps the "current parcel" in session cookies. More workers do not make a scan
+# faster: the county WAF allows roughly 15 lookups a minute per IP (measured
+# 2026-10), so throughput is set by LOOKUP_INTERVAL_SEC, not by parallelism.
+MAX_WORKERS = int(os.getenv("VPT_MAX_WORKERS", "1"))
+# Minimum seconds between lookup starts, across all workers. 5s (12/min) ran
+# clean; 3s was rejected on the 16th lookup.
+LOOKUP_INTERVAL_SEC = float(os.getenv("VPT_LOOKUP_INTERVAL_SEC", "5"))
+LOOKUP_INTERVAL_MAX_SEC = 60.0
+# A cached lookup whose bill is older than the current roll year is re-checked
+# after this many days (the new bill may not have been posted yet).
+RECHECK_DAYS = int(os.getenv("VPT_RECHECK_DAYS", "30"))
+# The county WAF answers "Request Rejected" once the limit is exceeded. Pause,
+# slow down for the rest of the run, and give up after repeated rejections.
+REJECT_BACKOFF_SEC = 60.0
+REJECT_BACKOFF_MAX_SEC = 480.0
+MAX_CONSECUTIVE_REJECTIONS = 5
+REJECTED_MARKER = "Request Rejected"
+BLOCKED_RESOURCE_TYPES = frozenset({"image", "font", "stylesheet", "media"})
 
-# Adaptive throttling state (best-effort, process-wide)
-_slow_mode = False
-_slow_mode_multiplier = 1.0
 CHROME_PATH = "/usr/bin/google-chrome"
 OUTPUT_DIR = BASE_DIR / "bills"
 CDP_URL = os.environ.get("CDP_URL", "").strip()
@@ -139,41 +155,6 @@ def _safe_url(url: str) -> str:
     return urllib.parse.urlunsplit((parts.scheme, parts.netloc, path, query, parts.fragment))
 
 
-def fetch_text(url: str) -> str:
-    """Fetch a URL with basic retry, safe URL quoting, and adaptive throttling."""
-    global _slow_mode, _slow_mode_multiplier
-
-    safe_url = _safe_url(url)
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            req = Request(safe_url, headers={"User-Agent": "Mozilla/5.0"})
-            with urlopen(req, timeout=30) as resp:
-                text = resp.read().decode("utf-8", "replace")
-                delay = REQUEST_DELAY_SEC * _slow_mode_multiplier
-                if delay > 0:
-                    time.sleep(delay)
-                return text
-        except HTTPError as exc:
-            status = getattr(exc, "code", None)
-            if status in (429, 503):
-                print(
-                    f"Rate-limit detected (HTTP {status}) on {url} "
-                    "- backing off and slowing scan."
-                )
-                _slow_mode = True
-                _slow_mode_multiplier = min(_slow_mode_multiplier * 2.0, 8.0)
-                time.sleep(30)
-            else:
-                if attempt == MAX_RETRIES:
-                    return ""
-                time.sleep(RETRY_BACKOFF_SEC * attempt)
-        except Exception:
-            if attempt == MAX_RETRIES:
-                return ""
-            time.sleep(RETRY_BACKOFF_SEC * attempt)
-    return ""
-
-
 def _is_bill_delinquent(html_text: str, debug_apn: str | None = None) -> bool:
     """
     Detect if bill HTML indicates actual tax delinquency (not boilerplate).
@@ -208,6 +189,60 @@ def _is_bill_delinquent(html_text: str, debug_apn: str | None = None) -> bool:
     return False
 
 
+def _marker_with_amount(marker: str, bill_html: str) -> str:
+    """Append the charge on the marker's row, e.g. 'MEAS-W OAKLAND VPT $6,000.00'."""
+    m = re.search(
+        re.escape(marker) + r'(?:(?!</tr>).)*?\$\s*([\d,]+\.\d{2})',
+        bill_html,
+        re.DOTALL | re.IGNORECASE,
+    )
+    return f"{marker} ${m.group(1)}" if m else marker
+
+
+def normalize_apn(value: str | None) -> str:
+    """
+    Canonical APN for comparing the parcel CSV form ('041 413301202') with the
+    form printed on bills ('41-4133-12-2'): book/page/parcel/sub zero-padded to
+    3/4/3/2 with separators dropped.
+    """
+    text = (value or "").strip().upper()
+    if "-" not in text:
+        return re.sub(r"[^A-Z0-9]", "", text)
+    parts = [part.strip() for part in text.split("-")]
+    if len(parts) > 4:
+        return re.sub(r"[^A-Z0-9]", "", text)
+    parts += ["0"] * (4 - len(parts))
+    out = ""
+    for part, width in zip(parts, (3, 4, 3, 2)):
+        m = re.fullmatch(r"(\d*)([A-Z]*)", part)
+        out += (m.group(1).zfill(width) + m.group(2)) if m else part
+    return out
+
+
+def _bill_parcel_number(bill_html: str) -> str | None:
+    m = re.search(r'Parcel Number:</strong>\s*<span[^>]*>\s*([^<]+)', bill_html)
+    return m.group(1).strip() if m else None
+
+
+def _tax_result(status: str = "error", **fields) -> dict:
+    """
+    Result of one tax lookup. status is 'ok' (latest bill fetched and verified
+    to belong to the APN), 'no_bill' (parcel has no bills), 'rejected' (WAF
+    block) or 'error'. Only 'ok' results may add or remove a property.
+    """
+    result = {
+        "status": status,
+        "has_vpt": False,
+        "is_delinquent": False,
+        "bill_url": None,
+        "roll_year": None,
+        "vpt_marker": None,
+        "bill_html": "",
+    }
+    result.update(fields)
+    return result
+
+
 def check_bill_vpt(bill_html: str, city: str | None = None) -> tuple[bool, str | None]:
     """
     Check bill HTML for Oakland Measure W or Berkeley Measure M VPT charges.
@@ -233,7 +268,7 @@ def check_bill_vpt(bill_html: str, city: str | None = None) -> tuple[bool, str |
     ]
     for marker in explicit_markers:
         if marker in bill_html:
-            return True, marker
+            return True, _marker_with_amount(marker, bill_html)
 
     # 2. Check table.fixed-charges specifically for Berkeley Measure M charges
     fixed_charges_match = re.search(
@@ -247,7 +282,7 @@ def check_bill_vpt(bill_html: str, city: str | None = None) -> tuple[bool, str |
         for r in rows:
             for marker in explicit_markers:
                 if marker in r:
-                    return True, marker
+                    return True, _marker_with_amount(marker, r)
             if city_upper == "BERKELEY" or not city_upper:
                 if re.search(r'(?<![\d,])\$\s*(?:3,000|6,000)\.00(?!\d)', r):
                     desc_match = re.search(r'<td[^>]*>(.*?)</td>', r, re.DOTALL | re.IGNORECASE)
@@ -264,64 +299,59 @@ def check_property_taxes_with_page(apn: str, page, city: str | None = None) -> d
     """
     clean_apn = re.sub(r"\s+", " ", (apn or "")).strip()
     if not clean_apn:
-        return {
-            "has_vpt": False,
-            "is_delinquent": False,
-            "bill_url": None,
-            "roll_year": None,
-            "vpt_marker": None,
-            "bill_html": "",
-        }
+        return _tax_result()
 
     try:
         # Navigate to search page if not already there
         if not page.url.startswith("https://propertytax.alamedacountyca.gov/search"):
             page.goto("https://propertytax.alamedacountyca.gov/search", timeout=15000)
 
-        # Switch to Parcel Number search via DOM click to avoid hijacking cursor
-        page.evaluate("""() => {
-            const toggle = document.querySelector('#toggleParcel');
-            if (toggle) toggle.click();
-        }""")
-        page.wait_for_timeout(200)
-
-        # Populate APN inputs and submit search via DOM events (zero mouse/pointer hijacking)
-        page.evaluate("""(cleanApn) => {
-            const disp = document.querySelector('#displayApn');
-            if (disp) {
-                disp.value = cleanApn;
-                disp.dispatchEvent(new Event('input', { bubbles: true }));
-                disp.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-            const hidden = document.querySelector('#apn');
-            if (hidden) {
-                hidden.value = cleanApn;
-            }
-            const search = document.querySelector('#searchButton');
-            if (search) search.click();
-        }""", clean_apn)
+        # Switch to Parcel Number search, populate the APN inputs and submit via
+        # DOM events (zero mouse/pointer hijacking). Submitting first fetches a
+        # CSRF token; that fetch is where the WAF rejects us when it rate-limits.
+        with page.expect_response("**/api/csrf-token", timeout=5000) as token_response:
+            page.evaluate("""(cleanApn) => {
+                const toggle = document.querySelector('#toggleParcel');
+                if (toggle) toggle.click();
+                const disp = document.querySelector('#displayApn');
+                if (disp) {
+                    disp.value = cleanApn;
+                    disp.dispatchEvent(new Event('input', { bubbles: true }));
+                    disp.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                const hidden = document.querySelector('#apn');
+                if (hidden) {
+                    hidden.value = cleanApn;
+                }
+                const search = document.querySelector('#searchButton');
+                if (search) search.click();
+            }""", clean_apn)
+        if "json" not in (token_response.value.headers.get("content-type") or "").lower():
+            return _tax_result("rejected")
 
         # Wait for account summary or results
+        reached_summary = True
         try:
             page.wait_for_url("**/account-summary*", timeout=10000)
         except Exception:
-            pass
+            reached_summary = False
 
-        try:
-            page.wait_for_selector('form[id^="view-bill-form"]', state="attached", timeout=6000)
-        except Exception:
-            pass
+        if reached_summary:
+            try:
+                page.wait_for_selector('form[id^="view-bill-form"]', state="attached", timeout=6000)
+            except Exception:
+                pass
 
         forms = page.query_selector_all('form[id^="view-bill-form"]')
         if not forms:
-            return {
-                "has_vpt": False,
-                "is_delinquent": False,
-                "bill_url": None,
-                "roll_year": None,
-                "vpt_marker": None,
-                "bill_html": "",
-            }
+            summary_html = page.content()
+            if REJECTED_MARKER in summary_html:
+                return _tax_result("rejected")
+            # A summary page with no bills is a real answer; a search that never
+            # got there (or is stuck on the bot check) is not.
+            if reached_summary and "bobcmn" not in summary_html:
+                return _tax_result("no_bill")
+            return _tax_result()
 
         # Select highest rollYear SEC bill (or highest rollYear)
         best_form = forms[0]
@@ -347,34 +377,37 @@ def check_property_taxes_with_page(apn: str, page, city: str | None = None) -> d
 
         bill_url = page.url
         bill_html = page.content()
+        if REJECTED_MARKER in bill_html:
+            return _tax_result("rejected")
+
+        # The site tracks the parcel in session cookies, so make sure this bill
+        # really is the one we asked for before anyone acts on it.
+        bill_parcel = _bill_parcel_number(bill_html)
+        if normalize_apn(bill_parcel) != normalize_apn(clean_apn):
+            print(f"APN {clean_apn}: bill is for parcel {bill_parcel!r}; ignoring result")
+            return _tax_result()
 
         has_vpt, vpt_marker = check_bill_vpt(bill_html, city)
         is_delinquent = _is_bill_delinquent(bill_html, debug_apn=clean_apn)
 
-        return {
-            "has_vpt": has_vpt,
-            "is_delinquent": is_delinquent,
-            "bill_url": bill_url,
-            "roll_year": roll_year,
-            "vpt_marker": vpt_marker,
-            "bill_html": bill_html,
-        }
+        return _tax_result(
+            "ok",
+            has_vpt=has_vpt,
+            is_delinquent=is_delinquent,
+            bill_url=bill_url,
+            roll_year=roll_year,
+            vpt_marker=vpt_marker,
+            bill_html=bill_html,
+        )
     except Exception as exc:
         print(f"Error checking APN {clean_apn}: {exc}")
-        return {
-            "has_vpt": False,
-            "is_delinquent": False,
-            "bill_url": None,
-            "roll_year": None,
-            "vpt_marker": None,
-            "bill_html": "",
-        }
+        return _tax_result()
 
 
 def check_property_taxes(apn: str, page=None, city: str | None = None) -> dict:
     """
     Check property tax status for an APN.
-    Returns dict with: has_vpt, is_delinquent, bill_url, roll_year, vpt_marker, bill_html.
+    Returns dict with: status, has_vpt, is_delinquent, bill_url, roll_year, vpt_marker, bill_html.
     """
     if page is not None:
         return check_property_taxes_with_page(apn, page, city=city)
@@ -394,25 +427,45 @@ def check_property_taxes(apn: str, page=None, city: str | None = None) -> dict:
                 browser.close()
     except Exception as exc:
         print(f"Browser check failed for {apn}: {exc}")
-        return {
-            "has_vpt": False,
-            "is_delinquent": False,
-            "bill_url": None,
-            "roll_year": None,
-            "vpt_marker": None,
-            "bill_html": "",
-        }
+        return _tax_result()
 
 
-def get_latest_bill_info(apn: str) -> tuple[str | None, int | None]:
-    result = check_property_taxes(apn)
-    return result["bill_url"], result["roll_year"]
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
-def check_meas_w(apn: str) -> tuple[bool, str | None, int | None]:
-    """Legacy function for compatibility - checks for MEAS-W VPT."""
-    result = check_property_taxes(apn)
-    return result["has_vpt"], result["bill_url"], result["roll_year"]
+def current_roll_year(now: datetime | None = None) -> int:
+    """Roll year of the newest secured bills (posted each October). VPT_ROLL_YEAR overrides."""
+    override = os.getenv("VPT_ROLL_YEAR", "").strip()
+    if override.isdigit():
+        return int(override)
+    now = now or _now()
+    return now.year if now.month >= 10 else now.year - 1
+
+
+def is_cache_fresh(entry: dict | None, now: datetime | None = None) -> bool:
+    """
+    True if a cached lookup still answers "what does the latest bill say?".
+    Fresh means we saw the current roll year's bill, or we looked recently and
+    the newest bill on file was older.
+    """
+    if not entry:
+        return False
+    status = entry.get("status")
+    if status is None:
+        # Legacy entries cached failed lookups as negatives with no bill_url.
+        if not entry.get("bill_url"):
+            return False
+    elif status not in ("ok", "no_bill"):
+        return False
+    roll_year = entry.get("roll_year")
+    if isinstance(roll_year, int) and roll_year >= current_roll_year(now):
+        return True
+    try:
+        checked_at = datetime.fromisoformat(entry.get("checked_at") or "")
+    except ValueError:
+        return False
+    return (now or _now()) - checked_at < timedelta(days=RECHECK_DAYS)
 
 
 def load_cache() -> dict[str, dict]:
@@ -437,6 +490,8 @@ def load_cache() -> dict[str, dict]:
                         "bill_url": obj.get("bill_url"),
                         "roll_year": obj.get("roll_year"),
                         "vpt_marker": obj.get("vpt_marker"),
+                        "status": obj.get("status"),
+                        "checked_at": obj.get("checked_at"),
                     }
     return cache
 
@@ -448,6 +503,7 @@ def append_cache(
     bill_url: str | None,
     roll_year: int | None,
     vpt_marker: str | None = None,
+    status: str = "ok",
 ) -> None:
     with CACHE_JSONL.open("a", encoding="utf-8") as f:
         f.write(
@@ -460,6 +516,8 @@ def append_cache(
                     "bill_url": bill_url,
                     "roll_year": roll_year,
                     "vpt_marker": vpt_marker,
+                    "status": status,
+                    "checked_at": _now().isoformat(),
                 }
             )
             + "\n"
@@ -640,281 +698,414 @@ def find_address_for_apn(apn: str) -> str | None:
     return None
 
 
-def run_single_apn(apn: str) -> None:
-    flagged, bill_url, roll_year = check_meas_w(apn)
-    print(f"APN {apn} MEAS-W: {flagged}")
-    if not flagged or not bill_url:
-        return
-    bill_html = fetch_text(bill_url)
-    row_json = None
-    with get_input_csv_path().open(newline="", encoding="utf-8", errors="replace") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            if row.get("APN", "").strip() == apn:
-                row_json = json.dumps(row, ensure_ascii=True)
-                break
-    upsert_db(apn, bill_url, bill_html, row_json)
-    print("Saved bill data to database.")
-
-
-def backfill_pdfs() -> None:
-    apn_to_address: dict[str, str] = {}
+def _load_parcel_rows(csv_path: Path, city: str | None = None) -> tuple[list[str], dict[str, str]]:
+    """Unique APNs in file order plus their CSV row as JSON, optionally for one city."""
     apn_order: list[str] = []
     apn_to_rowjson: dict[str, str] = {}
-
-    with get_input_csv_path().open(newline="", encoding="utf-8", errors="replace") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            if row.get("CITY", row.get("SitusCity", "")).strip().upper() != "OAKLAND":
-                continue
-            apn = row.get("APN", "").strip()
-            address = row.get("ADDRESS", row.get("MailingAddress", "")).strip()
-            if not apn:
-                continue
-            if apn not in apn_to_address:
-                apn_to_address[apn] = address
-                apn_order.append(apn)
-                apn_to_rowjson[apn] = json.dumps(row, ensure_ascii=True)
-
-    cache = load_cache()
-
-    total = len(apn_order)
-    processed = 0
-    hits = 0
-
-    to_process = [apn for apn in apn_order if apn not in cache]
-
-    to_download: list[tuple[str, str | None, int | None]] = []
-
-    # Gather cached positives, resolve bill URLs if missing
-    for apn, entry in cache.items():
-        processed += 1
-        if entry.get("has_meas_w"):
-            bill_url = entry.get("bill_url")
-            roll_year = entry.get("roll_year")
-            if not bill_url:
-                bill_url, roll_year = get_latest_bill_info(apn)
-            to_download.append((apn, bill_url, roll_year))
-
-    # Fetch bill HTML in parallel
-    def _fetch(item: tuple[str, str | None, int | None]) -> bool:
-        apn, bill_url, _ = item
-        if not bill_url:
-            return False
-        bill_html = fetch_text(bill_url)
-        upsert_db(apn, bill_url, bill_html, apn_to_rowjson.get(apn))
-        return True
-
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(_fetch, item): item for item in to_download}
-        for future in as_completed(futures):
-            try:
-                if future.result():
-                    hits += 1
-            except Exception:
-                continue
-
-    print(f"Backfill complete. PDFs written: {hits}")
-
-
-def retry_missing_pdfs() -> None:
-    apn_to_rowjson: dict[str, str] = {}
-    with get_input_csv_path().open(newline="", encoding="utf-8", errors="replace") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            apn = row.get("APN", "").strip()
-            if not apn:
-                continue
-            if apn not in apn_to_rowjson:
-                apn_to_rowjson[apn] = json.dumps(row, ensure_ascii=True)
-
-    cache = load_cache()
-    missing: list[tuple[str, str | None, int | None]] = []
-    for apn, entry in cache.items():
-        if not entry.get("has_meas_w"):
-            continue
-        bill_url = entry.get("bill_url")
-        roll_year = entry.get("roll_year")
-        if not bill_url:
-            bill_url, roll_year = get_latest_bill_info(apn)
-        if bill_url:
-            missing.append((apn, bill_url, roll_year))
-
-    if not missing:
-        print("No missing PDFs to retry.")
-        return
-
-    hits = 0
-    def _fetch(item: tuple[str, str | None, int | None]) -> bool:
-        apn, bill_url, _ = item
-        if not bill_url:
-            return False
-        bill_html = fetch_text(bill_url)
-        upsert_db(apn, bill_url, bill_html, apn_to_rowjson.get(apn))
-        return True
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = {executor.submit(_fetch, item): item for item in missing}
-        for future in as_completed(futures):
-            try:
-                if future.result():
-                    hits += 1
-            except Exception:
-                continue
-
-    print(f"Retry complete. PDFs written: {hits} (missing: {len(missing)})")
-
-
-TARGET_CITY: str | None = None  # Set via --city argument
-
-
-def main(city: str | None = None) -> None:
-    global TARGET_CITY, _stop_requested
-    _stop_requested = False
-    if city:
-        TARGET_CITY = city.strip().upper()
-
-    csv_path = get_input_csv_path(city=TARGET_CITY)
     if not csv_path.exists():
-        print(f"Parcel CSV not found at {csv_path}")
-        return
-
-    apn_to_address: dict[str, str] = {}
-    apn_order: list[str] = []
-    apn_to_rowjson: dict[str, str] = {}
-
+        return apn_order, apn_to_rowjson
     with csv_path.open(newline="", encoding="utf-8-sig", errors="replace") as f:
         reader = csv.DictReader(f)
         for row in reader:
             row_city = row.get("CITY", row.get("SitusCity", "")).strip().upper()
             # Filter by target city if specified and city field is present
-            if TARGET_CITY and row_city and row_city != TARGET_CITY:
+            if city and row_city and row_city != city:
                 continue
             apn = row.get("APN", "").strip()
-            address = row.get("ADDRESS", row.get("MailingAddress", "")).strip()
-            if not apn:
+            if not apn or apn in apn_to_rowjson:
                 continue
-            if apn not in apn_to_address:
-                apn_to_address[apn] = address
-                apn_order.append(apn)
-                apn_to_rowjson[apn] = json.dumps(row, ensure_ascii=True)
+            apn_order.append(apn)
+            apn_to_rowjson[apn] = json.dumps(row, ensure_ascii=True)
+    return apn_order, apn_to_rowjson
+
+
+def _log_removal(apn: str, action: str, result: dict, db_row: dict) -> None:
+    with REMOVED_JSONL.open("a", encoding="utf-8") as f:
+        f.write(
+            json.dumps(
+                {
+                    "apn": apn,
+                    "action": action,
+                    "location_of_property": db_row.get("location_of_property"),
+                    "city": db_row.get("city"),
+                    "bill_roll_year": result.get("roll_year"),
+                    "was_vpt": bool(db_row.get("has_vpt")),
+                    "was_delinquent": bool(db_row.get("delinquent")),
+                    "is_delinquent": bool(result.get("is_delinquent")),
+                    "at": _now().isoformat(),
+                }
+            )
+            + "\n"
+        )
+
+
+def apply_scan_result(
+    apn: str,
+    result: dict,
+    row_json: str | None,
+    db_row: dict | None,
+    curated: bool,
+    dry_run: bool = False,
+    label: str = "ALL",
+) -> str:
+    """
+    Bring the bills table in line with one verified tax lookup.
+
+    db_row is the property's scanner-owned bills row (see
+    db.get_bills_for_recheck) or None. Returns what happened: 'added',
+    'updated', 'removed', 'unflagged', 'unchanged', 'no_bill' or 'error'.
+    """
+    status = result.get("status")
+    if status != "ok":
+        # Unverified lookups never add or remove anything.
+        return "no_bill" if status == "no_bill" else "error"
+
+    prefix = f"[{label}]{' (dry run)' if dry_run else ''}"
+    if result.get("has_vpt"):
+        action = "updated" if db_row else "added"
+        if not dry_run:
+            upsert_db(apn, result.get("bill_url") or "", result.get("bill_html") or "", row_json)
+        if action == "added":
+            print(f"{prefix} ADDED {apn}: {result.get('vpt_marker')}")
+        return action
+
+    if not db_row:
+        return "unchanged"
+
+    where = db_row.get("location_of_property") or "unknown address"
+    reason = f"no VPT on {result.get('roll_year') or 'latest'} bill"
+    import db
+    if curated:
+        if not db_row.get("has_vpt"):
+            return "unchanged"
+        # Someone has worked on this property; deleting would cascade to their
+        # lists, scout results and outreach history.
+        if not dry_run:
+            db.update_bill_fields(
+                apn,
+                {"has_vpt": 0, "vpt_marker": None, "delinquent": int(bool(result.get("is_delinquent")))},
+            )
+            _log_removal(apn, "unflagged", result, db_row)
+        print(f"{prefix} UNFLAGGED {apn} ({where}): {reason}; kept because it is curated")
+        return "unflagged"
+
+    if not dry_run:
+        db.bulk_delete_bills([apn])
+        _log_removal(apn, "removed", result, db_row)
+    print(f"{prefix} REMOVED {apn} ({where}): {reason}")
+    return "removed"
+
+
+class _Pacer:
+    """
+    Spaces lookups across all workers to stay under the county WAF's limit,
+    and pauses everyone (then slows down) when it rejects a request anyway.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._interval = LOOKUP_INTERVAL_SEC
+        self._backoff = REJECT_BACKOFF_SEC
+        self._next_slot = 0.0
+        self._paused_until = 0.0
+        self._consecutive = 0
+        self.aborted = False
+
+    def rejected(self) -> None:
+        with self._lock:
+            now = time.time()
+            if now < self._paused_until:
+                return  # another worker already reported this rejection
+            self._consecutive += 1
+            if self._consecutive >= MAX_CONSECUTIVE_REJECTIONS:
+                self.aborted = True
+                return
+            self._interval = min(max(self._interval, 1.0) * 1.25, LOOKUP_INTERVAL_MAX_SEC)
+            print(
+                f"Tax site rejected a request; pausing {self._backoff:.0f}s, "
+                f"then one lookup every {self._interval:.1f}s"
+            )
+            self._paused_until = now + self._backoff
+            self._next_slot = max(self._next_slot, self._paused_until)
+            self._backoff = min(self._backoff * 2, REJECT_BACKOFF_MAX_SEC)
+
+    def ok(self) -> None:
+        with self._lock:
+            self._consecutive = 0
+            self._backoff = REJECT_BACKOFF_SEC
+
+    def wait(self) -> None:
+        """Block until this worker's turn to start a lookup."""
+        with self._lock:
+            slot = max(time.time(), self._next_slot)
+            self._next_slot = slot + self._interval
+        while not self.aborted and not _stop_requested:
+            remaining = slot - time.time()
+            if remaining <= 0:
+                return
+            time.sleep(min(remaining, 1.0))
+
+
+def _new_scan_context(browser):
+    """Isolated context (own session cookies) that skips assets the scan never reads."""
+    context = browser.new_context()
+    context.route(
+        "**/*",
+        lambda route: route.abort()
+        if route.request.resource_type in BLOCKED_RESOURCE_TYPES
+        else route.continue_(),
+    )
+    return context
+
+
+_WORKER_DONE = object()
+
+
+def _scan_worker(tasks: queue.Queue, results: queue.Queue, city: str | None, pacer: _Pacer) -> None:
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser, is_cdp = get_browser(p)
+            try:
+                context = page = None
+                while not _stop_requested and not pacer.aborted:
+                    try:
+                        apn = tasks.get_nowait()
+                    except queue.Empty:
+                        break
+                    pacer.wait()
+                    if context is None:
+                        context = _new_scan_context(browser)
+                    if page is None or page.is_closed():
+                        page = context.new_page()
+                    result = check_property_taxes_with_page(apn, page, city=city)
+                    if result["status"] == "rejected":
+                        # Retry this parcel after the pause, on a fresh session.
+                        pacer.rejected()
+                        tasks.put(apn)
+                        context.close()
+                        context = page = None
+                        continue
+                    pacer.ok()
+                    results.put((apn, result))
+            finally:
+                browser.close()
+    except Exception as exc:
+        print(f"Scan worker stopped: {exc}")
+    finally:
+        results.put(_WORKER_DONE)
+
+
+def scan_apns(apns: list[str], city: str | None, on_result, max_workers: int | None = None) -> bool:
+    """
+    Look up each APN with paced browser workers. on_result(apn, result) runs
+    on the calling thread, so it may write the cache and DB without locks.
+    Returns False if the scan gave up because the site kept rejecting requests.
+    """
+    if not apns:
+        return True
+    tasks: queue.Queue = queue.Queue()
+    for apn in apns:
+        tasks.put(apn)
+    results: queue.Queue = queue.Queue()
+    pacer = _Pacer()
+    running = max(1, min(max_workers or MAX_WORKERS, len(apns)))
+    for _ in range(running):
+        threading.Thread(target=_scan_worker, args=(tasks, results, city, pacer), daemon=True).start()
+    while running:
+        item = results.get()
+        if item is _WORKER_DONE:
+            running -= 1
+            continue
+        on_result(*item)
+    return not pacer.aborted
+
+
+def _scan_and_apply(
+    apns: list[str],
+    city: str | None,
+    row_json_by_apn: dict[str, str],
+    db_rows: dict[str, dict],
+    curated: set[str],
+    dry_run: bool = False,
+) -> Counter:
+    """Scan APNs and apply each result to the cache and DB. Returns action counts."""
+    label = city or "ALL"
+    stats: Counter = Counter()
+    total = len(apns)
+    started = time.time()
+
+    def on_result(apn: str, result: dict) -> None:
+        stats["scanned"] += 1
+        try:
+            action = apply_scan_result(
+                apn, result, row_json_by_apn.get(apn), db_rows.get(apn), apn in curated,
+                dry_run=dry_run, label=label,
+            )
+            # Cached only once the DB agrees, so a failed write is retried next run.
+            if result["status"] in ("ok", "no_bill"):
+                append_cache(
+                    apn, result["has_vpt"], result["is_delinquent"], result["bill_url"],
+                    result["roll_year"], result["vpt_marker"], status=result["status"],
+                )
+        except Exception as exc:
+            print(f"[{label}] Error applying result for {apn}: {exc}")
+            action = "error"
+        stats[action] += 1
+        if stats["scanned"] % 25 == 0 or stats["scanned"] == total:
+            per_min = stats["scanned"] * 60 / max(time.time() - started, 0.001)
+            print(
+                f"[{label}] {stats['scanned']}/{total} ({per_min:.1f}/min) "
+                f"added {stats['added']}, removed {stats['removed']}, "
+                f"unflagged {stats['unflagged']}, errors {stats['error']}"
+            )
+
+    if not scan_apns(apns, city, on_result):
+        print(f"[{label}] Stopping: the tax site kept rejecting requests. Try again later or raise VPT_LOOKUP_INTERVAL_SEC.")
+    return stats
+
+
+def recheck_apns(apns: list[str], city: str | None = None, dry_run: bool = False) -> dict[str, int]:
+    """Look up specific APNs now (ignoring the cache) and add/remove them as their latest bill says."""
+    apns = list(dict.fromkeys(a for a in apns if a))
+    if not apns:
+        return {}
+    import db
+    _, apn_to_rowjson = _load_parcel_rows(get_input_csv_path(city=city))
+    return dict(_scan_and_apply(apns, city, apn_to_rowjson, db.get_bills_for_recheck(), db.get_curated_apns(), dry_run))
+
+
+def recheck_cached_positives(dry_run: bool = False) -> dict[str, int]:
+    """Re-check cached VPT parcels that are missing from the DB."""
+    import db
+    in_db = db.get_results_apns()
+    apns = [apn for apn, entry in load_cache().items() if entry.get("has_vpt") and apn not in in_db]
+    return recheck_apns(apns, dry_run=dry_run)
+
+
+def run_single_apn(apn: str, dry_run: bool = False) -> None:
+    stats = recheck_apns([apn], dry_run=dry_run)
+    print(f"APN {apn}: {stats}")
+
+
+TARGET_CITY: str | None = None  # Set via --city argument
+
+
+def main(
+    city: str | None = None,
+    recheck_only: bool = False,
+    dry_run: bool = False,
+    force: bool = False,
+) -> dict[str, int]:
+    """
+    Sync one city (or every parcel in the CSV) with the tax site. Returns
+    action counts (scanned, added, updated, removed, unflagged, error, ...).
+    """
+    global TARGET_CITY, _stop_requested
+    _stop_requested = False
+    if city:
+        TARGET_CITY = city.strip().upper()
+    label = TARGET_CITY or "ALL"
+    stats: Counter = Counter()
+
+    csv_path = get_input_csv_path(city=TARGET_CITY)
+    if not csv_path.exists():
+        print(f"Parcel CSV not found at {csv_path}")
+        return dict(stats)
+
+    apn_order, apn_to_rowjson = _load_parcel_rows(csv_path, TARGET_CITY)
+    if not apn_order:
+        print(f"No parcels found for city: {label}")
+        return dict(stats)
 
     cache = load_cache()
 
-    total = len(apn_order)
-    if total == 0:
-        print(f"No parcels found for city: {TARGET_CITY or 'ALL'}")
-        return
+    import db
+    db_rows = db.get_bills_for_recheck(TARGET_CITY)
+    if not TARGET_CITY:
+        # Without a city filter the DB also holds other counties' parcels.
+        db_rows = {apn: row for apn, row in db_rows.items() if apn in apn_to_rowjson}
+    curated = db.get_curated_apns() if db_rows else set()
+    # Older DB rows are keyed by the bill's dashed APN form; compare normalised
+    # so discovery does not add the same parcel again under the CSV form.
+    known_apns = {normalize_apn(apn) for apn in db_rows}
 
-    cached_apns_in_city = {apn for apn in apn_order if apn in cache}
-    to_process = [apn for apn in apn_order if apn not in cache]
+    # 1) Properties already in the DB go first, so lapsed ones are removed early.
+    recheck: list[str] = []
+    # VPT rows before delinquent-only ones: those are the removals that matter most.
+    for apn, row in sorted(db_rows.items(), key=lambda item: not item[1].get("has_vpt")):
+        entry = cache.get(apn)
+        if not force and is_cache_fresh(entry):
+            if entry.get("has_vpt") and row.get("has_vpt"):
+                continue
+            if not entry.get("has_vpt") and entry.get("status") == "ok":
+                # Already verified against the latest bill: no need to ask again.
+                stats[apply_scan_result(apn, {**entry, "bill_html": ""}, None, row, apn in curated, dry_run=dry_run, label=label)] += 1
+                continue
+        recheck.append(apn)
 
-    print(f"Scanning {total} parcels for city: {TARGET_CITY or 'ALL'}")
-    print(f"  - {len(cached_apns_in_city)} already in cache; {len(to_process)} to scan")
+    # 2) Then every parcel not yet looked up for the current bill year.
+    discover: list[str] = []
+    if not recheck_only:
+        discover = [
+            apn for apn in apn_order
+            if normalize_apn(apn) not in known_apns and (force or not is_cache_fresh(cache.get(apn)))
+        ]
 
-    if not to_process:
-        print(f"All {total} parcels for {TARGET_CITY or 'ALL'} are already cached.")
-        return
+    print(f"[{label}] {len(apn_order)} parcels, {len(known_apns)} in DB")
+    print(f"  - re-checking {len(recheck)} DB properties; scanning {len(discover)} unchecked/stale parcels")
 
-    processed = len(cached_apns_in_city)
-    hits = 0
+    stats.update(_scan_and_apply(recheck + discover, TARGET_CITY, apn_to_rowjson, db_rows, curated, dry_run))
+    if _stop_requested:
+        print(f"[{label}] Stop requested. Ending scan.")
 
-    from playwright.sync_api import sync_playwright
-    with sync_playwright() as p:
-        browser, is_cdp = get_browser(p)
-        try:
-            context = browser.contexts[0] if browser.contexts else browser.new_context()
-            page = context.new_page()
-            try:
-                for apn in to_process:
-                    if _stop_requested:
-                        print(f"[{TARGET_CITY or 'ALL'}] Stop requested. Ending scan.")
-                        break
-
-                    processed += 1
-                    try:
-                        if page.is_closed():
-                            page = context.new_page()
-                        result = check_property_taxes_with_page(apn, page, city=TARGET_CITY)
-                    except Exception as e:
-                        print(f"[{TARGET_CITY or 'ALL'}] Error scanning {apn}: {e}")
-                        continue
-
-                    has_vpt = result["has_vpt"]
-                    is_delinquent = result["is_delinquent"]
-                    bill_url = result["bill_url"]
-                    roll_year = result["roll_year"]
-                    vpt_marker = result["vpt_marker"]
-                    bill_html = result.get("bill_html", "")
-
-                    append_cache(apn, has_vpt, is_delinquent, bill_url, roll_year, vpt_marker)
-
-                    if (has_vpt or is_delinquent) and bill_url:
-                        if not bill_html:
-                            bill_html = fetch_text(bill_url)
-                        upsert_db(apn, bill_url, bill_html, apn_to_rowjson.get(apn))
-                        hits += 1
-
-                    if processed % 10 == 0:
-                        print(f"[{TARGET_CITY or 'ALL'}] Processed {processed}/{total} APNs; VPT/Delinquent: {hits}")
-            finally:
-                if not page.is_closed():
-                    page.close()
-        finally:
-            browser.close()
-
-    print(f"[{TARGET_CITY or 'ALL'}] Scan complete. Total: {total}, VPT/Delinquent found: {hits}")
+    print(
+        f"[{label}] Scan complete{' (dry run)' if dry_run else ''}. Scanned {stats['scanned']}: "
+        f"added {stats['added']}, removed {stats['removed']}, unflagged {stats['unflagged']}, "
+        f"no bill {stats['no_bill']}, errors {stats['error']}"
+    )
+    return dict(stats)
 
 
 def fix_missing_fields() -> None:
-    """Re-fetch bill HTML for DB entries with missing location_of_property."""
+    """Re-check scanner-owned DB entries with missing location_of_property."""
     import db
-    apn_to_rowjson: dict[str, str] = {}
-    with get_input_csv_path().open(newline="", encoding="utf-8", errors="replace") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            apn = row.get("APN", "").strip()
-            if not apn:
-                continue
-            if apn not in apn_to_rowjson:
-                apn_to_rowjson[apn] = json.dumps(row, ensure_ascii=True)
+    owned = db.get_bills_for_recheck()
+    apns = [apn for apn, _ in db.get_bills_missing_location() if apn in owned]
 
-    rows = db.get_bills_missing_location()
-
-    if not rows:
+    if not apns:
         print("No entries with missing fields.")
         return
 
-    print(f"Found {len(rows)} entries with missing fields. Re-fetching...")
-    hits = 0
-    for apn, bill_url in rows:
-        if not bill_url:
-            bill_url, _ = get_latest_bill_info(apn)
-        if not bill_url:
-            continue
-        bill_html = fetch_text(bill_url)
-        upsert_db(apn, bill_url, bill_html, apn_to_rowjson.get(apn))
-        hits += 1
-
-    print(f"Fixed {hits} entries.")
+    print(f"Found {len(apns)} entries with missing fields. Re-checking...")
+    stats = recheck_apns(apns)
+    print(f"Fixed {stats.get('updated', 0)} entries; removed {stats.get('removed', 0)} without VPT.")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        arg = sys.argv[1].strip()
-        if arg == "--backfill-only":
-            backfill_pdfs()
-        elif arg == "--retry-missing":
-            retry_missing_pdfs()
-        elif arg == "--fix-missing":
-            fix_missing_fields()
-        elif arg == "--city" and len(sys.argv) > 2:
-            city = sys.argv[2].strip()
-            main(city=city)
+    cli_city = None
+    single_apn = None
+    mode = None
+    flags = {"recheck_only": False, "dry_run": False, "force": False}
+    args = [a.strip() for a in sys.argv[1:]]
+    while args:
+        arg = args.pop(0)
+        if arg in ("--backfill-only", "--retry-missing", "--fix-missing"):
+            mode = arg
+        elif arg in ("--recheck-only", "--dry-run", "--force"):
+            flags[arg[2:].replace("-", "_")] = True
+        elif arg == "--city" and args:
+            cli_city = args.pop(0)
         elif arg.startswith("--city="):
-            city = arg.split("=", 1)[1].strip()
-            main(city=city)
+            cli_city = arg.split("=", 1)[1].strip()
         else:
-            run_single_apn(arg)
+            single_apn = arg
+
+    if mode == "--fix-missing":
+        fix_missing_fields()
+    elif mode:
+        print(recheck_cached_positives(dry_run=flags["dry_run"]))
+    elif single_apn:
+        run_single_apn(single_apn, dry_run=flags["dry_run"])
     else:
-        main()
+        main(city=cli_city, **flags)
