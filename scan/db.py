@@ -604,9 +604,54 @@ def update_bill_ai_vacancy(
 # Keep these function names for existing callers, but use the current schema.
 # ---------------------------------------------------------------------------
 
+def _select_all(table: str, columns: str, apply=None, page_size: int = 1000) -> list[dict[str, Any]]:
+    """Fetch every row of a select; PostgREST caps a single response at 1000 rows."""
+    rows: list[dict[str, Any]] = []
+    offset = 0
+    while True:
+        q = get_client().table(table).select(columns)
+        if apply is not None:
+            q = apply(q)
+        page = q.range(offset, offset + page_size - 1).execute().data or []
+        rows.extend(page)
+        if len(page) < page_size:
+            return rows
+        offset += page_size
+
+
 def get_results_apns() -> set[str]:
-    r = get_client().table("bills").select("apn").execute()
-    return {row["apn"] for row in (r.data or []) if row.get("apn")}
+    return {row["apn"] for row in _select_all("bills", "apn") if row.get("apn")}
+
+
+def get_bills_for_recheck(city: str | None = None) -> dict[str, dict[str, Any]]:
+    """Scanner-owned bills (VPT or delinquent) keyed by APN, for re-checking the latest bill.
+
+    Rows with neither flag (power-off promotions, CSV imports) are not returned,
+    so the VPT scan never removes them.
+    """
+    def _apply(q):
+        q = q.or_("has_vpt.eq.1,delinquent.eq.1")
+        if city:
+            q = q.ilike("city", city.strip())
+        return q
+
+    columns = "apn, has_vpt, delinquent, tax_year, location_of_property, city"
+    return {row["apn"]: row for row in _select_all("bills", columns, _apply) if row.get("apn")}
+
+
+_CURATED_TABLES = ("list_properties", "scout_results", "outreach", "outreach_messages")
+
+
+def get_curated_apns() -> set[str]:
+    """APNs someone has worked on (lists/Favorites, scout results, outreach).
+
+    Deleting a bills row cascades to all of these, so the scanner unflags
+    curated properties instead of deleting them.
+    """
+    apns: set[str] = set()
+    for table in _CURATED_TABLES:
+        apns.update(row["apn"] for row in _select_all(table, "apn") if row.get("apn"))
+    return apns
 
 
 def upsert_result(apn: str, pdf_file: str | None = None) -> None:
