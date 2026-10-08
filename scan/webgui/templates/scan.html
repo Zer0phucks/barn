@@ -73,6 +73,15 @@
       <div class="stat-box"><div class="value" id="total-bills">-</div><div class="label">Total Records</div></div>
       <div class="stat-box"><div class="value" id="vpt-count">-</div><div class="label">VPT Properties</div></div>
     </div>
+    <div id="scan-progress" style="display:none;margin-top:14px;">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13px;margin-bottom:6px;">
+        <span><strong id="scan-progress-count">0 / 0</strong> parcels scanned <span id="scan-progress-pct" style="color:var(--text-muted);"></span></span>
+        <span><strong id="scan-progress-speed">0</strong> scanned/min</span>
+      </div>
+      <div style="height:8px;border-radius:4px;background:var(--border);overflow:hidden;" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="scan-progress-track">
+        <div id="scan-progress-bar" style="height:100%;width:0%;background:var(--success);transition:width .4s;"></div>
+      </div>
+    </div>
   </div>
 
   <div class="card">
@@ -248,6 +257,22 @@ async function refreshStatus() {
     // Update stats
     document.getElementById('total-bills').textContent = (data.total_bills || 0).toLocaleString();
     document.getElementById('vpt-count').textContent = (data.vpt_count || 0).toLocaleString();
+
+    // Update scan progress (scanned / total parcels and speed)
+    const progress = data.progress;
+    const progressEl = document.getElementById('scan-progress');
+    if (data.is_running && progress && progress.total > 0) {
+      const pct = Math.min(100, (progress.scanned / progress.total) * 100);
+      progressEl.style.display = '';
+      document.getElementById('scan-progress-count').textContent =
+        `${progress.scanned.toLocaleString()} / ${progress.total.toLocaleString()}`;
+      document.getElementById('scan-progress-pct').textContent = `(${pct.toFixed(1)}%)`;
+      document.getElementById('scan-progress-speed').textContent = (progress.per_min || 0).toFixed(1);
+      document.getElementById('scan-progress-bar').style.width = `${pct}%`;
+      document.getElementById('scan-progress-track').setAttribute('aria-valuenow', pct.toFixed(0));
+    } else {
+      progressEl.style.display = 'none';
+    }
 
     // Update city select
     const select = document.getElementById('city-select');

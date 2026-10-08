@@ -193,16 +193,16 @@ Rows with neither flag (PG&E power-off promotions, CSV imports) are never touche
 
 ### Scan speed
 
-The county site rate-limits to roughly 15 lookups a minute per IP and answers "Request Rejected" beyond that (measured October 2026), so the scanner paces itself rather than running in parallel:
+The county site rate-limits per IP and answers "Request Rejected" beyond its limit (measured October 2026: bursts above ~15 lookups/min are blocked at once, and a steady 8–12/min was blocked within about 130 lookups), so the scanner paces itself rather than running in parallel:
 
 | Variable                  | Default | Meaning                                                        |
 | ------------------------- | ------- | -------------------------------------------------------------- |
-| `VPT_LOOKUP_INTERVAL_SEC` | `5`     | Minimum seconds between lookups (3 s was rejected, 5 s was not) |
+| `VPT_LOOKUP_INTERVAL_SEC` | `10`    | Minimum seconds between lookups (5–8 s was eventually rejected) |
 | `VPT_MAX_WORKERS`         | `1`     | Browser workers; more does not help under the per-IP limit      |
 | `VPT_RECHECK_DAYS`        | `30`    | Re-check parcels whose newest bill is from an older year        |
 | `VPT_ROLL_YEAR`           | auto    | Override the current bill year                                  |
 
-At 12 lookups/min, re-checking ~2,000 DB properties takes about 3 hours and a first full pass over Oakland (~94,000 parcels) about 5.5 days; later runs in the same bill year only look up what is not cached. On a rejection the scan pauses, slows down for the rest of the run, and stops after 5 rejections in a row.
+At 6 lookups/min, re-checking ~2,000 DB properties takes about 5.5 hours and a first full pass over Oakland (~94,000 parcels) about 11 days; later runs in the same bill year only look up what is not cached. On a rejection the scan pauses, slows down for the rest of the run, and stops after 5 rejections in a row. The scan page shows parcels scanned / total and the current scanned/min.
 
 ## API Endpoints
 

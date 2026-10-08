@@ -206,6 +206,7 @@ def get_scan_state() -> dict:
         "total_hits": scan_state["total_hits"],
         "removed": scan_state["removed"],
         "unflagged": scan_state["unflagged"],
+        "progress": dict(scanner.scan_progress) if scan_state["is_running"] else None,
     }
 
 

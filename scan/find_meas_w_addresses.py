@@ -60,12 +60,13 @@ VPT_MARKERS = [MEAS_W_MARKER] + MEAS_M_MARKERS
 
 # Browser workers. Each needs its own browser context because the tax site
 # keeps the "current parcel" in session cookies. More workers do not make a scan
-# faster: the county WAF allows roughly 15 lookups a minute per IP (measured
-# 2026-10), so throughput is set by LOOKUP_INTERVAL_SEC, not by parallelism.
+# faster: the county WAF rate-limits per IP (measured 2026-10), so throughput
+# is set by LOOKUP_INTERVAL_SEC, not by parallelism.
 MAX_WORKERS = int(os.getenv("VPT_MAX_WORKERS", "1"))
-# Minimum seconds between lookup starts, across all workers. 5s (12/min) ran
-# clean; 3s was rejected on the 16th lookup.
-LOOKUP_INTERVAL_SEC = float(os.getenv("VPT_LOOKUP_INTERVAL_SEC", "5"))
+# Minimum seconds between lookup starts, across all workers. 3s is rejected
+# within 16 lookups; 5s and 8s were rejected within ~130; ~10s (6/min) ran
+# 200+ lookups clean.
+LOOKUP_INTERVAL_SEC = float(os.getenv("VPT_LOOKUP_INTERVAL_SEC", "10"))
 LOOKUP_INTERVAL_MAX_SEC = 60.0
 # A cached lookup whose bill is older than the current roll year is re-checked
 # after this many days (the new bill may not have been posted yet).
@@ -82,6 +83,10 @@ CHROME_PATH = "/usr/bin/google-chrome"
 OUTPUT_DIR = BASE_DIR / "bills"
 CDP_URL = os.environ.get("CDP_URL", "").strip()
 _stop_requested = False
+# Live progress of the current scan, read by the web UI via run_all.get_scan_state().
+# "scanned" counts parcels that are up to date (already cached or looked up in
+# this run) out of "total" in scope; "per_min" is this run's lookup speed.
+scan_progress = {"scanned": 0, "total": 0, "per_min": 0.0}
 
 
 def request_stop() -> None:
@@ -928,12 +933,20 @@ def _scan_and_apply(
     db_rows: dict[str, dict],
     curated: set[str],
     dry_run: bool = False,
+    scope_total: int | None = None,
 ) -> Counter:
-    """Scan APNs and apply each result to the cache and DB. Returns action counts."""
+    """
+    Scan APNs and apply each result to the cache and DB. Returns action counts.
+    scope_total is the number of parcels the run covers including ones that
+    needed no lookup, so progress reads as "parcels up to date / all parcels".
+    """
     label = city or "ALL"
     stats: Counter = Counter()
     total = len(apns)
     started = time.time()
+    scope_total = max(scope_total or total, total)
+    up_to_date = scope_total - total
+    scan_progress.update(scanned=up_to_date, total=scope_total, per_min=0.0)
 
     def on_result(apn: str, result: dict) -> None:
         stats["scanned"] += 1
@@ -952,8 +965,9 @@ def _scan_and_apply(
             print(f"[{label}] Error applying result for {apn}: {exc}")
             action = "error"
         stats[action] += 1
+        per_min = stats["scanned"] * 60 / max(time.time() - started, 0.001)
+        scan_progress.update(scanned=up_to_date + stats["scanned"], per_min=round(per_min, 1))
         if stats["scanned"] % 25 == 0 or stats["scanned"] == total:
-            per_min = stats["scanned"] * 60 / max(time.time() - started, 0.001)
             print(
                 f"[{label}] {stats['scanned']}/{total} ({per_min:.1f}/min) "
                 f"added {stats['added']}, removed {stats['removed']}, "
@@ -1055,7 +1069,14 @@ def main(
     print(f"[{label}] {len(apn_order)} parcels, {len(known_apns)} in DB")
     print(f"  - re-checking {len(recheck)} DB properties; scanning {len(discover)} unchecked/stale parcels")
 
-    stats.update(_scan_and_apply(recheck + discover, TARGET_CITY, apn_to_rowjson, db_rows, curated, dry_run))
+    # Everything this run covers: the city's parcels plus DB rows keyed differently.
+    if recheck_only:
+        scope_total = len(known_apns)
+    else:
+        scope_total = len(known_apns | {normalize_apn(apn) for apn in apn_order})
+    stats.update(
+        _scan_and_apply(recheck + discover, TARGET_CITY, apn_to_rowjson, db_rows, curated, dry_run, scope_total=scope_total)
+    )
     if _stop_requested:
         print(f"[{label}] Stop requested. Ending scan.")
 

@@ -372,6 +372,36 @@ class TestFindMeasWAndRunAll(unittest.TestCase):
         fake_db.bulk_delete_bills.assert_called_once_with(["003"])
         self.assertEqual(upsert.call_args.args[0], "001")
 
+    def test_main_reports_progress_over_all_parcels(self):
+        now = datetime.now(timezone.utc).isoformat()
+        cache = {"002": {"status": "ok", "has_vpt": False, "bill_url": "u", "roll_year": scanner.current_roll_year(), "checked_at": now}}
+        seen: list[dict] = []
+        real_apply = scanner.apply_scan_result
+
+        def recording_apply(*args, **kwargs):
+            seen.append(dict(scanner.scan_progress))
+            return real_apply(*args, **kwargs)
+
+        with patch.object(scanner, "apply_scan_result", side_effect=recording_apply):
+            self._run_main(cache, {}, {"001": _ok_result(), "003": _ok_result()})
+
+        # 3 parcels in the CSV, 1 already cached: starts at 1/3 and ends at 3/3.
+        self.assertEqual(seen[0]["scanned"], 1)
+        self.assertEqual(seen[0]["total"], 3)
+        self.assertEqual(scanner.scan_progress["scanned"], 3)
+        self.assertEqual(scanner.scan_progress["total"], 3)
+        self.assertGreater(scanner.scan_progress["per_min"], 0)
+
+    def test_scan_state_exposes_progress_only_while_running(self):
+        scanner.scan_progress.update(scanned=5, total=10, per_min=12.0)
+        with patch.object(run_all, "get_cities_from_csv", return_value=[]), patch.dict(
+            run_all.intake_autopilot.intake_state, {"is_running": False}
+        ):
+            with patch.dict(run_all.scan_state, {"is_running": True}):
+                self.assertEqual(run_all.get_scan_state()["progress"], {"scanned": 5, "total": 10, "per_min": 12.0})
+            with patch.dict(run_all.scan_state, {"is_running": False}):
+                self.assertIsNone(run_all.get_scan_state()["progress"])
+
     def test_main_recheck_only_skips_discovery(self):
         db_rows = {"003": {"apn": "003", "has_vpt": 1, "delinquent": 0}}
         stats, scanned, _, _ = self._run_main({}, db_rows, {"003": _ok_result(has_vpt=True)}, recheck_only=True)
