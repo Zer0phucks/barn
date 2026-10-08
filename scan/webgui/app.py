@@ -2,12 +2,15 @@
 # pyre-ignore-all-errors
 from __future__ import annotations
 
+import csv
+import io
 import json
 import math
 import os
+import re
 import sys
 import html
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from functools import wraps
 from pathlib import Path
 from typing import Any, cast
@@ -134,9 +137,11 @@ def _supabase_configured() -> bool:
     """Return True if Supabase env vars are set (for Vercel/serverless)."""
     url = os.environ.get("SUPABASE_URL", "")
     key = (
-        os.environ.get("SUPABASE_SERVICE_KEY")
+        os.environ.get("SUPABASE_SECRET_KEY")
+        or os.environ.get("SUPABASE_SERVICE_KEY")
         or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-        or os.environ.get("SUPABASE_ANON_KEY", "")
+        or os.environ.get("SUPABASE_PUBLISHABLE_KEY")
+        or os.environ.get("SUPABASE_PUBLISHABLE_KEY") or os.environ.get("SUPABASE_ANON_KEY", "")
     )
     return bool(url and key)
 
@@ -249,6 +254,48 @@ def _filter_rows_by_county(rows: list[dict], county_filter: str) -> list[dict]:
     ]
 
 
+def _get_thirty_one_days_ago() -> datetime:
+    """Return a UTC datetime 31 days in the past."""
+    return datetime.now(timezone.utc) - timedelta(days=31)
+
+
+def _is_within_days(dt_val: Any, days: int = 30) -> bool:
+    """Return True if dt_val is a timestamp within the last `days` days."""
+    if not dt_val:
+        return False
+    if isinstance(dt_val, str):
+        try:
+            cleaned = dt_val.replace("Z", "+00:00").strip()
+            dt = datetime.fromisoformat(cleaned)
+        except Exception:
+            return False
+    elif isinstance(dt_val, datetime):
+        dt = dt_val
+    else:
+        return False
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    diff = (now - dt).total_seconds()
+    return 0 <= diff <= (days * 86400)
+
+
+def _format_added_at(dt_val: Any) -> str:
+    """Format an added_at timestamp as YYYY-MM-DD. Defaults to 31 days ago if not available."""
+    val = dt_val or _get_thirty_one_days_ago()
+    if isinstance(val, str):
+        try:
+            cleaned = val.replace("Z", "+00:00").strip()
+            dt = datetime.fromisoformat(cleaned)
+            return dt.strftime("%Y-%m-%d")
+        except Exception:
+            return val.split("T")[0] if "T" in val else val
+    elif isinstance(val, datetime):
+        return val.strftime("%Y-%m-%d")
+    return str(val)
+
+
+
 @app.errorhandler(RuntimeError)
 def handle_runtime_error(e: RuntimeError):
     """Return clear 503 when Supabase is not configured (e.g. missing Vercel env vars)."""
@@ -314,7 +361,7 @@ def _get_claims_from_token(token: str) -> dict | None:
     if not _supabase_configured():
         return None
     url = os.environ.get("SUPABASE_URL", "").rstrip("/")
-    anon = os.environ.get("SUPABASE_ANON_KEY", "")
+    anon = os.environ.get("SUPABASE_PUBLISHABLE_KEY") or os.environ.get("SUPABASE_ANON_KEY", "")
     # 1) Try get_claims(jwt=...) if available (supabase-py 2.x)
     try:
         client = db.get_client()
@@ -377,7 +424,10 @@ def _verify_supabase_bearer_request() -> dict | None:
 
 def login_required(f):
     """Compatibility decorator; authentication is disabled for local development."""
-    return f
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 
@@ -390,7 +440,7 @@ def login():
         "login.html",
         error=request.args.get("error"),
         supabase_url=os.environ.get("SUPABASE_URL", ""),
-        supabase_anon_key=os.environ.get("SUPABASE_ANON_KEY", ""),
+        supabase_anon_key=os.environ.get("SUPABASE_PUBLISHABLE_KEY") or os.environ.get("SUPABASE_ANON_KEY", ""),
     )
 
 
@@ -466,6 +516,93 @@ def home():
     return render_template("home.html", active_nav="home")
 
 
+def _build_list_view_row(
+    r: dict[str, Any],
+    parcel: dict[str, Any],
+    favorites_set: set[str],
+    parcel_zips: dict[str, str],
+    selected_list_apns: set[str] | None = None,
+) -> dict[str, Any]:
+    """Shape one map_markers row into the display dict the list view renders.
+
+    One builder so the /search table and the My Lists modal show identical
+    columns; map_markers rows carry the parcel fallbacks as columns, so this
+    also tolerates the synthesized row_json _view_row_to_bill_row produces.
+    """
+    apn = str(r.get("apn") or "").strip()
+    power = r.get("power_status") or ""
+    location = r.get("location_of_property") or r.get("location") or ""
+    return {
+        # map_markers carries neither pdf_file nor condition_notes.
+        "pdf_file": r.get("pdf_file"),
+        "bill_url": r.get("bill_url") or "",
+        "apn": apn,
+        "added_at": _format_added_at(r.get("added_at")),
+        "added_at_raw": r.get("added_at"),
+        "is_new": _is_within_days(r.get("added_at"), 30),
+        "parcel_number": r.get("parcel_number") or "",
+        "tracer_number": r.get("tracer_number") or "",
+        "location_of_property": location,
+        "tax_year": r.get("tax_year") or "",
+        "last_payment": r.get("last_payment") or "",
+        "delinquent": "Yes" if (r.get("delinquent") or 0) == 1 else "No",
+        "power_status": power.upper() if power else "",
+        "has_vpt": "Yes" if (r.get("has_vpt") or 0) == 1 else "No",
+        "vpt_marker": r.get("vpt_marker") or "",
+        "city": r.get("city") or parcel.get("SitusCity") or "",
+        "is_favorite": apn in favorites_set,
+        "mailing_address": r.get("mailing_address") or parcel.get("MailingAddress") or "",
+        "situs_address": r.get("situs_address") or parcel.get("SitusAddress") or "",
+        "situs_city": r.get("situs_city") or r.get("city") or parcel.get("SitusCity") or "",
+        "situs_zip": r.get("zip_code") or r.get("situs_zip") or parcel_zips.get(apn, ""),
+        "pdf_url": f"/pdf/{r['pdf_file']}" if r.get("pdf_file") else "",
+        "maps_url": (
+            f"https://www.google.com/maps/search/?api=1&query={quote_plus(location)}"
+            if location
+            else ""
+        ),
+        "condition_score": r.get("condition_score"),
+        "condition_notes": r.get("condition_notes") or "",
+        "streetview_image_path": r.get("streetview_image_path") or "",
+        "property_search_url": r.get("property_search_url") or "",
+        "mailing_search_url": r.get("mailing_search_url") or "",
+        "prop_occupancy_type": r.get("prop_occupancy_type") or "",
+        "prop_ownership_type": r.get("prop_ownership_type") or "",
+        "prop_last_sale_date": r.get("prop_last_sale_date") or "",
+        "primary_resident_name": r.get("primary_resident_name") or "",
+        "primary_resident_age": r.get("primary_resident_age") or "",
+        "primary_resident_phone_number": r.get("owner_mobile_phone") or "",
+        "deceased_count": r.get("deceased_count"),
+        "important_notes": r.get("important_notes") or "",
+        "outreach_score": r.get("outreach_score"),
+        "outreach_stage": r.get("outreach_stage") or "",
+        "research_status": r.get("research_status") or "",
+        "owner_name": r.get("owner_name") or "",
+        "latitude": r.get("lat") if r.get("lat") is not None else r.get("latitude"),
+        "longitude": r.get("lng") if r.get("lng") is not None else r.get("longitude"),
+        "in_selected_list": apn in (selected_list_apns or set()),
+    }
+
+
+def _map_marker_rows_by_apn(apns: list[str]) -> dict[str, dict[str, Any]]:
+    """Fetch map_markers rows keyed by APN, shaped like _view_row_to_bill_row."""
+    out: dict[str, dict[str, Any]] = {}
+    for row in _chunked_in_query("map_markers", "*", "apn", apns):
+        apn = str(row.get("apn") or "").strip()
+        if not apn:
+            continue
+        shaped = dict(row)
+        shaped["location_of_property"] = row.get("location") or row.get("location_of_property") or ""
+        shaped["row_json"] = {
+            "MailingAddress": row.get("mailing_address"),
+            "SitusAddress": row.get("situs_address"),
+            "SitusZip": row.get("situs_zip"),
+            "SitusCity": row.get("city"),
+        }
+        out[apn] = shaped
+    return out
+
+
 @app.route("/search")
 @login_required
 def search_page():
@@ -488,6 +625,7 @@ def search_page():
     deceased_count_filter = (request.args.get("deceased_count") or "").strip()
     outreach_stage_filter = (request.args.get("outreach_stage") or "").strip()
     owner_name_filter = (request.args.get("owner_name") or "").strip()
+    new_filter = (request.args.get("new") or "").strip()
     sort = request.args.get("sort") or "location_of_property"
     order = request.args.get("order") or "asc"
     page = max(int(request.args.get("page") or 1), 1)
@@ -547,10 +685,11 @@ def search_page():
         outofstate_filter=outofstate_filter,
         research_filter=research_filter,
         owner_name_filter=owner_name_filter,
+        new_filter=new_filter,
         sort=sort,
         order=order,
-        page=query_page,
-        page_size=query_page_size,
+        page=1,
+        page_size=0,  # 0 = unlimited
     )
 
     if county_filter:
@@ -572,60 +711,17 @@ def search_page():
         rows = rows[start : start + page_size]
 
     # Build display rows with some parcel fields pulled from JSON
-    display = []
-    for r in rows:
-        parcel = parse_row_json(r["row_json"])
-        power = r["power_status"] or ""
-        apn = r["apn"]
-        display.append(
-            {
-                # map_markers carries neither pdf_file nor condition_notes.
-                "pdf_file": r.get("pdf_file"),
-                "bill_url": r["bill_url"] or "",
-                "apn": apn,
-                "added_at": r.get("added_at"),
-                "parcel_number": r["parcel_number"],
-                "tracer_number": r["tracer_number"],
-                "location_of_property": r["location_of_property"],
-                "tax_year": r["tax_year"],
-                "last_payment": r["last_payment"] or "",
-                "delinquent": "Yes" if (r["delinquent"] or 0) == 1 else "No",
-                "power_status": power.upper() if power else "",
-                "has_vpt": "Yes" if (r["has_vpt"] or 0) == 1 else "No",
-                "vpt_marker": r["vpt_marker"] or "",
-                "city": r["city"] or parcel.get("SitusCity") or "",
-                "is_favorite": apn in favorites_set,
-                "mailing_address": parcel.get("MailingAddress") or "",
-                "situs_address": parcel.get("SitusAddress") or "",
-                "situs_city": parcel.get("SitusCity") or "",
-                "situs_zip": r["situs_zip"] or "",
-                "pdf_url": f"/pdf/{r['pdf_file']}" if r.get("pdf_file") else "",
-                "bill_url": r["bill_url"] or "",
-                "maps_url": (
-                    f"https://www.google.com/maps/search/?api=1&query="
-                    f"{quote_plus(r['location_of_property'] or '')}"
-                    if r["location_of_property"]
-                    else ""
-                ),
-                "condition_score": r["condition_score"],
-                "condition_notes": r.get("condition_notes") or "",
-                "streetview_image_path": r["streetview_image_path"] or "",
-                "property_search_url": r.get("property_search_url") or "",
-                "mailing_search_url": r.get("mailing_search_url") or "",
-                "prop_occupancy_type": r.get("prop_occupancy_type") or "",
-                "prop_ownership_type": r.get("prop_ownership_type") or "",
-                "prop_last_sale_date": r.get("prop_last_sale_date") or "",
-                "primary_resident_name": r.get("primary_resident_name") or "",
-                "primary_resident_age": r.get("primary_resident_age") or "",
-                "primary_resident_phone_number": r.get("owner_mobile_phone") or "",
-                "deceased_count": r.get("deceased_count"),
-                "important_notes": r.get("important_notes") or "",
-                "outreach_score": r.get("outreach_score"),
-                "outreach_stage": r.get("outreach_stage") or "",
-                "owner_name": r.get("owner_name") or "",
-                "in_selected_list": apn in selected_list_apns,
-            }
+    parcel_zips = _parcel_zip_by_apn([str(r.get("apn") or "").strip() for r in rows])
+    display = [
+        _build_list_view_row(
+            r,
+            parse_row_json(r.get("row_json")),
+            favorites_set,
+            parcel_zips,
+            selected_list_apns,
         )
+        for r in rows
+    ]
 
     total_pages = max((int(total) + int(page_size) - 1) // int(page_size), 1)
     return_to_path = request.full_path if request.query_string else request.path
@@ -652,6 +748,7 @@ def search_page():
         deceased_count_filter=deceased_count_filter,
         outreach_stage_filter=outreach_stage_filter,
         owner_name_filter=owner_name_filter,
+        new_filter=new_filter,
         list_id=selected_list_id,
         selected_list=selected_list,
         sort=sort,
@@ -690,6 +787,7 @@ def gallery_page():
     deceased_count_filter = (request.args.get("deceased_count") or "").strip()
     outreach_stage_filter = (request.args.get("outreach_stage") or "").strip()
     owner_name_filter = (request.args.get("owner_name") or "").strip()
+    new_filter = (request.args.get("new") or "").strip()
     sort = request.args.get("sort") or "location_of_property"
     order = request.args.get("order") or "asc"
     page = max(int(request.args.get("page") or 1), 1)
@@ -740,6 +838,7 @@ def gallery_page():
         outofstate_filter=outofstate_filter,
         research_filter=research_filter,
         owner_name_filter=owner_name_filter,
+        new_filter=new_filter,
         sort=sort,
         order=order,
         page=query_page,
@@ -771,6 +870,7 @@ def gallery_page():
         rows = [r for r in rows if (r.get("outreach_stage") or "identified") == stage_val]
         total = len(rows)
 
+    parcel_zips = _parcel_zip_by_apn([str(r.get("apn") or "").strip() for r in rows])
     display = []
     for r in rows:
         parcel = parse_row_json(r["row_json"])
@@ -779,9 +879,12 @@ def gallery_page():
         display.append(
             {
                 "apn": apn,
+                "added_at": _format_added_at(r.get("added_at")),
+                "added_at_raw": r.get("added_at"),
+                "is_new": _is_within_days(r.get("added_at"), 30),
                 "location_of_property": r["location_of_property"],
                 "city": r["city"] or parcel.get("SitusCity") or "",
-                "situs_zip": r["situs_zip"] or "",
+                "situs_zip": r.get("zip_code") or r["situs_zip"] or parcel_zips.get(apn, ""),
                 "power_status": power.upper() if power else "",
                 "has_vpt": "Yes" if (r["has_vpt"] or 0) == 1 else "No",
                 "delinquent": "Yes" if (r["delinquent"] or 0) == 1 else "No",
@@ -829,6 +932,7 @@ def gallery_page():
         deceased_count_filter=deceased_count_filter,
         outreach_stage_filter=outreach_stage_filter,
         owner_name_filter=owner_name_filter,
+        new_filter=new_filter,
         list_id=selected_list_id,
         selected_list=selected_list,
         sort=sort,
@@ -862,6 +966,7 @@ def api_apn_list():
     research_filter = (request.args.get("research") or "").strip()
     owner_name_filter = (request.args.get("owner_name") or "").strip()
     outreach_stage_filter = (request.args.get("outreach_stage") or "").strip()
+    new_filter = (request.args.get("new") or "").strip()
     sort = request.args.get("sort") or "location_of_property"
     order = request.args.get("order") or "asc"
 
@@ -887,10 +992,11 @@ def api_apn_list():
         outofstate_filter=outofstate_filter,
         research_filter=research_filter,
         owner_name_filter=owner_name_filter,
+        new_filter=new_filter,
         sort=sort,
         order=order,
-        page=1,
-        page_size=0,  # 0 = unlimited
+        page=query_page,
+        page_size=query_page_size,
     )
 
     if county_filter:
@@ -955,6 +1061,9 @@ def property_detail(apn: str):
     return_to = _safe_return_to(request.args.get("return_to"), fallback=url_for("search_page"))
     property_data = {
         "apn": apn,
+        "added_at": _format_added_at(row.get("added_at")),
+        "added_at_raw": row.get("added_at"),
+        "is_new": _is_within_days(row.get("added_at"), 30),
         "display_name": location,
         "location_of_property": location,
         "city": city,
@@ -972,7 +1081,13 @@ def property_detail(apn: str):
         "mailing_address": parcel.get("MailingAddress") or "",
         "situs_address": parcel.get("SitusAddress") or "",
         "situs_city": parcel.get("SitusCity") or "",
-        "situs_zip": row.get("situs_zip") or "",
+        "situs_zip": (
+            row.get("situs_zip")
+            or row.get("zip_code")
+            or parcel.get("ZIPCODE")
+            or parcel.get("SitusZip")
+            or ""
+        ),
         "research_status": row.get("research_status") or "unchecked",
         "has_report": bool(row.get("research_report_path")),
         "pdf_url": pdf_url,
@@ -1112,6 +1227,7 @@ def _row_matches_map_filters(
     vpt_filter: str,
     delinquent_filter: str,
     owner_name_filter: str,
+    new_filter: str,
     favorites_set: set[str],
 ) -> bool:
     apn = str(row.get("apn") or "").strip()
@@ -1139,6 +1255,8 @@ def _row_matches_map_filters(
 
     if zip_values:
         zip_candidates = {
+            _extract_zip_code(str(row.get("zip_code") or "")),
+            _extract_zip_code(str(parcel.get("ZIPCODE") or "")),
             _extract_zip_code(str(parcel.get("SitusZip") or "")),
             _extract_zip_code(str(parcel.get("MailingZip") or "")),
             _extract_zip_code(location),
@@ -1167,10 +1285,25 @@ def _row_matches_map_filters(
     if delinquent_filter == "1" and not _is_truthy_flag(row.get("delinquent")):
         return False
 
+    if new_filter == "1" and not _is_within_days(row.get("added_at"), 30):
+        return False
+
     if owner_name_filter and owner_name_filter.lower() not in owner_name.lower():
         return False
 
     return True
+
+
+def _parcel_zip_by_apn(apns: list[str]) -> dict[str, str]:
+    """Map APN -> ZIP from parcels.row_json, whose county files use ZIPCODE."""
+    out: dict[str, str] = {}
+    for row in _chunked_in_query("parcels", "apn, row_json", "apn", apns):
+        apn = str(row.get("apn") or "").strip()
+        parcel = parse_row_json(row.get("row_json"))
+        zip_code = str(parcel.get("ZIPCODE") or parcel.get("SitusZip") or "").strip()
+        if apn and zip_code:
+            out[apn] = zip_code
+    return out
 
 
 def _get_list_map_rows(list_id: int) -> list[dict[str, Any]]:
@@ -1206,15 +1339,17 @@ def _get_list_map_rows(list_id: int) -> list[dict[str, Any]]:
                 "mailing_search_url",
                 "condition_score",
                 "owner_name",
+                "zip_code",
+                "added_at",
             ]
         ),
         "apn",
         list_apns,
     )
-    parcels = _chunked_in_query("parcels", "APN, row_json", "APN", list_apns)
+    parcels = _chunked_in_query("parcels", "apn, row_json", "apn", list_apns)
 
     bill_by_apn = {str(row.get("apn")): row for row in bills if row.get("apn")}
-    parcel_json_by_apn = {str(row.get("APN")): row.get("row_json") for row in parcels if row.get("APN")}
+    parcel_json_by_apn = {str(row.get("apn")): row.get("row_json") for row in parcels if row.get("apn")}
 
     rows: list[dict[str, Any]] = []
     for apn in list_apns:
@@ -1244,6 +1379,7 @@ def api_markers():
     city_filter = (request.args.get("city") or "").strip().upper()
     vpt_filter = (request.args.get("vpt") or "").strip()
     delinquent_filter = (request.args.get("delinquent") or "").strip()
+    new_filter = (request.args.get("new") or "").strip()
     owner_name_filter = (request.args.get("owner_name") or "").strip()
     list_id_raw = (request.args.get("list_id") or "").strip()
     try:
@@ -1283,6 +1419,7 @@ def api_markers():
                 vpt_filter=vpt_filter,
                 delinquent_filter=delinquent_filter,
                 owner_name_filter=owner_name_filter,
+                new_filter=new_filter,
                 favorites_set=favorites_set,
             ):
                 continue
@@ -1304,6 +1441,7 @@ def api_markers():
             outofstate_filter="",
             research_filter="",
             owner_name_filter=owner_name_filter,
+            new_filter=new_filter,
             sort="location_of_property",
             order="asc",
             page=page,
@@ -1454,6 +1592,103 @@ def api_favorites_bulk_add():
     return jsonify({"status": "ok", "added": count})
 
 
+@app.route("/api/favorites/bulk-remove", methods=["POST"])
+@login_required
+def api_favorites_bulk_remove():
+    """Remove multiple APNs from favorites."""
+    data = request.get_json() or {}
+    apns = data.get("apns", [])
+    if not apns or not isinstance(apns, list):
+        return jsonify({"status": "error", "message": "apns list is required"}), 400
+    cleaned = [a for a in (_clean_apn(str(x)) for x in apns if x is not None) if a]
+    if not cleaned:
+        return jsonify({"status": "error", "message": "No valid APNs provided"}), 400
+    count = db.bulk_remove_favorites(cleaned)
+    return jsonify({"status": "ok", "removed": count})
+
+
+_EXPORT_COLUMNS: list[tuple[str, str]] = [
+    ("apn", "APN"),
+    ("location_of_property", "Address"),
+    ("city", "City"),
+    ("zip_code", "Zip"),
+    ("has_vpt", "VPT"),
+    ("vpt_marker", "VPT Marker"),
+    ("delinquent", "Delinquent"),
+    ("power_status", "Power"),
+    ("condition_score", "Condition Score"),
+    ("owner_name", "Owner Name"),
+    ("research_status", "Research Status"),
+    ("tax_year", "Tax Year"),
+    ("last_payment", "Last Payment"),
+    ("bill_url", "Bill URL"),
+    ("lat", "Latitude"),
+    ("lng", "Longitude"),
+]
+
+
+def _list_apns_in_order(list_id: int) -> list[str]:
+    rows = (
+        db.get_client()
+        .table("list_properties")
+        .select("apn")
+        .eq("list_id", list_id)
+        .order("sort_order")
+        .execute()
+        .data
+        or []
+    )
+    return [str(row.get("apn") or "").strip() for row in rows if row.get("apn")]
+
+
+def _csv_response(apns: list[str], stem: str) -> Response:
+    fields = [field for field, _ in _EXPORT_COLUMNS]
+    bills = _chunked_in_query("bills", ",".join(fields), "apn", apns)
+    by_apn = {str(bill.get("apn")): bill for bill in bills if bill.get("apn")}
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([label for _, label in _EXPORT_COLUMNS])
+    for apn in apns:
+        bill = by_apn.get(apn)
+        if not bill:
+            continue
+        row = []
+        for field, _ in _EXPORT_COLUMNS:
+            value = bill.get(field)
+            if field in ("has_vpt", "delinquent"):
+                value = "Yes" if value == 1 else "No"
+            row.append("" if value is None else value)
+        writer.writerow(row)
+
+    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip("-").lower() or "list"
+    filename = f"{safe_stem}-{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
+    return Response(
+        buf.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.route("/api/favorites/export", methods=["GET"])
+@login_required
+def api_favorites_export():
+    """Download favorites as CSV."""
+    list_id = db.get_favorites_list_id()
+    apns = _list_apns_in_order(list_id) if list_id is not None else []
+    return _csv_response(apns, "favorites")
+
+
+@app.route("/api/lists/<int:list_id>/export", methods=["GET"])
+@login_required
+def api_list_export(list_id: int):
+    """Download one list as CSV."""
+    lst = db.get_list(list_id)
+    if not lst:
+        return jsonify({"error": "List not found"}), 404
+    return _csv_response(_list_apns_in_order(list_id), str(lst.get("name") or f"list-{list_id}"))
+
+
 @app.route("/api/properties/<path:apn>/notes", methods=["POST"])
 @login_required
 def api_update_property_notes(apn: str):
@@ -1593,7 +1828,7 @@ def api_scan_stop():
         if success:
             return jsonify({"status": "ok", "message": "Scan stopping..."})
         else:
-            return jsonify({"status": "error", "message": "Cannot stop (not in continuous mode)"})
+            return jsonify({"status": "error", "message": "Cannot stop (no scan currently running)"})
     except ModuleNotFoundError:
         return jsonify({"status": "error", "message": "Scanner not available in cloud deployment"})
     except Exception as e:
@@ -2368,62 +2603,6 @@ def _normalize_list_name(name: str) -> str:
     return (name or "").strip().casefold()
 
 
-def _remove_legacy_favorites_lists() -> int:
-    """Delete legacy user lists named 'Favorites' to avoid conflict with real favorites."""
-    rows = db.get_client().table("lists").select("id, name").execute()
-    legacy_ids = [
-        row["id"]
-        for row in (rows.data or [])
-        if _normalize_list_name(row.get("name") or "") == "favorites"
-    ]
-    for list_id in legacy_ids:
-        db.get_client().table("list_properties").delete().eq("list_id", list_id).execute()
-        db.get_client().table("lists").delete().eq("id", list_id).execute()
-    return len(legacy_ids)
-
-
-def _build_property_summary(apn: str, row: dict[str, Any], parcel: dict[str, Any]) -> dict[str, Any]:
-    lat = row.get("lat") or row.get("latitude")
-    lng = row.get("lng") or row.get("longitude")
-    if lat is None or lng is None:
-        try:
-            x = float(parcel.get("CENTROID_X") or parcel.get("X_CORD") or parcel.get("x") or 0)
-            y = float(parcel.get("CENTROID_Y") or parcel.get("Y_CORD") or parcel.get("y") or 0)
-        except (ValueError, TypeError):
-            x, y = 0, 0
-        if x != 0 and y != 0:
-            lat, lng = web_mercator_to_latlng(x, y)
-        else:
-            lat, lng = None, None
-
-    is_favorite = db.has_favorite(apn)
-
-    return {
-        "apn": apn,
-        "address": row.get("location_of_property") or "",
-        "city": row.get("city"),
-        "has_vpt": row.get("has_vpt") == 1,
-        "condition_score": row.get("condition_score"),
-        "latitude": lat,
-        "longitude": lng,
-        "queue_position": row.get("queue_position"),
-        "sort_order": row.get("sort_order"),
-        "streetview_image_path": row.get("streetview_image_path") or "",
-        "power_status": (row.get("power_status") or "").upper(),
-        "is_favorite": is_favorite,
-        "badges": [
-            badge
-            for badge in [
-                "VPT" if row.get("has_vpt") == 1 else "",
-                "Favorite" if is_favorite else "",
-                "Delinquent" if row.get("delinquent") == 1 else "",
-                f"Power {(row.get('power_status') or '').upper()}" if row.get("power_status") else "",
-            ]
-            if badge
-        ],
-    }
-
-
 def _chunked_in_query(table: str, select_fields: str, key: str, values: list[str], chunk_size: int = 200) -> list[dict]:
     if not values:
         return []
@@ -2449,9 +2628,9 @@ def lists_page():
 @app.route("/api/lists", methods=["GET"])
 @login_required
 def api_lists_get():
-    """Get all lists with property counts."""
-    _remove_legacy_favorites_lists()
-    return jsonify(db.get_lists())
+    """Get custom lists with property counts (Favorites has its own card)."""
+    favorites_id = db.get_favorites_list_id()
+    return jsonify([lst for lst in db.get_lists() if lst.get("id") != favorites_id])
 
 
 @app.route("/api/lists", methods=["POST"])
@@ -2484,20 +2663,44 @@ def api_lists_create():
     })
 
 
+def _list_view_rows_for_apns(apns: list[str], sort_orders: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Build ordered list-view rows for APNs, keeping the caller's sequence."""
+    favorites_set = set(db.get_favorites_apns())
+    rows_by_apn = _map_marker_rows_by_apn(apns)
+    parcel_zips = _parcel_zip_by_apn(apns)
+    sort_orders = sort_orders or {}
+    properties: list[dict[str, Any]] = []
+    for index, apn in enumerate(apns):
+        row = rows_by_apn.get(apn) or {"apn": apn}
+        prop = _build_list_view_row(
+            row,
+            parse_row_json(row.get("row_json")),
+            favorites_set,
+            parcel_zips,
+        )
+        prop["queue_position"] = index
+        prop["sort_order"] = sort_orders.get(apn, index)
+        properties.append(prop)
+    return properties
+
+
 @app.route("/api/lists/<int:list_id>", methods=["GET"])
 @login_required
 def api_lists_get_one(list_id: int):
-    """Get a single list with its properties."""
+    """Get a single list with its properties (list-view detail rows)."""
     lst = db.get_list(list_id)
     if not lst:
         return jsonify({"error": "List not found"}), 404
-    
+
     ordered_properties = db.get_list_properties(list_id)
-    properties = []
-    for prop in ordered_properties:
-        parcel = parse_row_json(prop.get("row_json"))
-        properties.append(_build_property_summary(prop["apn"], prop, parcel))
-    
+    apns = [str(prop.get("apn") or "").strip() for prop in ordered_properties if prop.get("apn")]
+    sort_orders = {
+        str(prop.get("apn") or "").strip(): prop.get("sort_order")
+        for prop in ordered_properties
+        if prop.get("apn")
+    }
+    properties = _list_view_rows_for_apns(apns, sort_orders)
+
     return jsonify({
         "id": lst["id"],
         "name": lst["name"],
@@ -2511,38 +2714,9 @@ def api_lists_get_one(list_id: int):
 @app.route("/api/favorites/details", methods=["GET"])
 @login_required
 def api_favorites_details():
-    """Get real favorites with property details (for Lists page modal)."""
-    apns = [apn for apn in db.get_favorites_apns() if apn]
-    if not apns:
-        return jsonify(
-            {
-                "id": "favorites",
-                "name": "Favorites",
-                "description": "Global favorites",
-                "properties": [],
-            }
-        )
-
-    bill_rows = _chunked_in_query(
-        "bills",
-        "apn, location_of_property, city, has_vpt, condition_score",
-        "apn",
-        apns,
-    )
-    parcel_rows = _chunked_in_query("parcels", "APN, row_json", "APN", apns)
-    bill_by_apn = {row.get("apn"): row for row in bill_rows if row.get("apn")}
-    parcel_by_apn = {
-        row.get("APN"): parse_row_json(row.get("row_json"))
-        for row in parcel_rows
-        if row.get("APN")
-    }
-
-    properties: list[dict[str, Any]] = []
-    for apn in apns:
-        bill = bill_by_apn.get(apn) or {}
-        parcel = parcel_by_apn.get(apn) or {}
-        properties.append(_build_property_summary(apn, bill, parcel))
-
+    """Get real favorites with list-view property details (for Lists page modal)."""
+    apns = [str(apn).strip() for apn in db.get_favorites_apns() if str(apn or "").strip()]
+    properties = _list_view_rows_for_apns(apns)
     return jsonify(
         {
             "id": "favorites",
@@ -2556,7 +2730,9 @@ def api_favorites_details():
 @app.route("/api/lists/<int:list_id>", methods=["DELETE"])
 @login_required
 def api_lists_delete(list_id: int):
-    """Delete a list."""
+    """Delete a list. The Favorites list is reserved and cannot be deleted."""
+    if list_id == db.get_favorites_list_id():
+        return jsonify({"success": False, "error": "Favorites cannot be deleted."}), 400
     deleted = db.delete_list(list_id)
     if deleted:
         return jsonify({"success": True})
@@ -2589,6 +2765,7 @@ def api_lists_add_properties(list_id: int):
                     outofstate_filter=filters.get("outofstate", ""),
                     research_filter=filters.get("research", ""),
                     owner_name_filter=filters.get("owner_name", ""),
+                    new_filter=filters.get("new", ""),
                     occupancy_filter=filters.get("occupancy_type", ""),
                     ownership_filter=filters.get("ownership_type", ""),
                     primary_resident_age_filter=filters.get("primary_resident_age", ""),
@@ -2613,6 +2790,7 @@ def api_lists_add_properties(list_id: int):
                     outofstate_filter=filters.get("outofstate", ""),
                     research_filter=filters.get("research", ""),
                     owner_name_filter=filters.get("owner_name", ""),
+                    new_filter=filters.get("new", ""),
                     occupancy_filter=filters.get("occupancy_type", ""),
                     ownership_filter=filters.get("ownership_type", ""),
                     primary_resident_age_filter=filters.get("primary_resident_age", ""),
@@ -2651,6 +2829,23 @@ def api_lists_remove_property(list_id: int, apn: str):
     """Remove a property from a list."""
     deleted = db.remove_property_from_list(list_id, apn)
     return jsonify({"success": deleted})
+
+
+@app.route("/api/lists/<int:list_id>/remove-properties", methods=["POST"])
+@login_required
+def api_lists_remove_properties(list_id: int):
+    """Remove multiple properties from a list in one request."""
+    data = request.get_json() or {}
+    apns = data.get("apns", [])
+    if not isinstance(apns, list):
+        return jsonify({"success": False, "error": "apns list is required"}), 400
+    cleaned = [a for a in (_clean_apn(str(x)) for x in apns if x is not None) if a]
+    if not cleaned:
+        return jsonify({"success": False, "error": "No valid APNs provided"}), 400
+    if not db.get_list(list_id):
+        return jsonify({"success": False, "error": "List not found"}), 404
+    count = db.bulk_remove_properties_from_list(list_id, cleaned)
+    return jsonify({"success": True, "count": count})
 
 
 @app.route("/api/lists/<int:list_id>/route-preview", methods=["GET"])
@@ -3017,7 +3212,7 @@ def outreach_page():
         "outreach_new.html",
         active_nav="outreach",
         supabase_url=os.environ.get("SUPABASE_URL", ""),
-        supabase_anon_key=os.environ.get("SUPABASE_ANON_KEY", ""),
+        supabase_anon_key=os.environ.get("SUPABASE_PUBLISHABLE_KEY") or os.environ.get("SUPABASE_ANON_KEY", ""),
     )
 
 

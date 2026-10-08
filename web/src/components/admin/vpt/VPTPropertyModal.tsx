@@ -6,6 +6,8 @@ import {
   vptGetConditionScore,
   vptGetResearchReport,
   vptGetStreetviewImageUrlFromMarker,
+  isWithinDays,
+  formatAddedAt,
   type VPTMarker,
 } from "@/services/vptApi";
 
@@ -107,6 +109,17 @@ export default function VPTPropertyModal({ property, type, open, onClose }: VPTP
               <span className="text-muted-foreground">Delinquent:</span>{" "}
               <span className={property.delinquent === "Yes" ? "text-red-600 font-medium" : ""}>
                 {property.delinquent}
+              </span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Date Added:</span>{" "}
+              <span className="font-medium">
+                {formatAddedAt(property.added_at)}
+                {isWithinDays(property.added_at, 30) && (
+                  <Badge className="ml-1.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300 text-[10px] px-1.5 py-0 font-semibold">
+                    New
+                  </Badge>
+                )}
               </span>
             </div>
           </div>

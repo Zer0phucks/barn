@@ -218,6 +218,13 @@
     <dl class="kv-grid">
       <dt>Location</dt>
       <dd>{{ property.location_of_property or "-" }}</dd>
+      <dt>Date Added</dt>
+      <dd>
+        <span>{{ property.added_at or "-" }}</span>
+        {% if property.is_new %}
+        <span class="pill pill-active" style="background:#27ae60; color:#fff; font-size:10px; padding:2px 6px; margin-left:4px; font-weight:700; border-radius:3px;">NEW</span>
+        {% endif %}
+      </dd>
       <dt>APN</dt>
       <dd>{{ property.apn }}</dd>
       <dt>Parcel #</dt>

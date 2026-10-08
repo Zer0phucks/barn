@@ -10,6 +10,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -43,8 +44,10 @@ except ImportError:
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = (
-    os.environ.get("SUPABASE_SERVICE_KEY")
+    os.environ.get("SUPABASE_SECRET_KEY")
+    or os.environ.get("SUPABASE_SERVICE_KEY")
     or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    or os.environ.get("SUPABASE_PUBLISHABLE_KEY")
     or os.environ.get("SUPABASE_ANON_KEY", "")
 )
 
@@ -101,6 +104,8 @@ def upsert_bill(
     research_status: str | None = None,
     research_report_path: str | None = None,
     research_updated_at: str | None = None,
+    zip_code: str | None = None,
+    added_at: str | None = None,
 ) -> None:
     payload: dict[str, Any] = {
         "apn": apn,
@@ -124,6 +129,8 @@ def upsert_bill(
         "research_status": research_status,
         "research_report_path": research_report_path,
         "research_updated_at": research_updated_at,
+        "zip_code": zip_code,
+        "added_at": added_at,
     }
     payload = {k: v for k, v in payload.items() if v is not None or k == "apn"}
     if "pdf_file" not in payload or payload.get("pdf_file") is None:
@@ -220,15 +227,32 @@ def get_bill(apn: str) -> dict[str, Any] | None:
 
 
 def get_distinct_zips() -> list[str]:
-    """Fetch distinct zip codes from parcels."""
-    r = get_client().rpc("get_distinct_zips").execute()
-    data = r.data
-    if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict) and "distinct_zip" in data[0]:
-        return [row["distinct_zip"] for row in data]
-    elif isinstance(data, list) and all(isinstance(x, str) for x in data):
-        return data  # if json_agg unwraps text
-    # RPC returns json array of objects like [{"distinct_zip": "94501"}, ...]
-    return []
+    """Fetch distinct zip codes, the values the /search zip filter matches.
+
+    bills.zip_code is the canonical field (scanner + backfill); situs_zip is
+    the legacy parcel-derived column.
+    """
+    zips: set[str] = set()
+    offset = 0
+    page_size = 1000
+    while True:
+        r = (
+            get_client()
+            .table("map_markers")
+            .select("zip_code,situs_zip")
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        rows = r.data or []
+        for row in rows:
+            for key in ("zip_code", "situs_zip"):
+                z = str(row.get(key) or "").strip()
+                if z:
+                    zips.add(z)
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return sorted(zips)
 
 
 def get_distinct_cities() -> list[str]:
@@ -341,6 +365,7 @@ def get_bills_with_parcels_filtered(
     outofstate_filter: str = "",
     research_filter: str = "",
     owner_name_filter: str = "",
+    new_filter: str = "",
     sort: str = "location_of_property",
     order: str = "asc",
     page: int = 1,
@@ -362,7 +387,9 @@ def get_bills_with_parcels_filtered(
         query = query.eq("city", city)
     zips = [z.strip() for z in (zip_filter or "").split(",") if z.strip()]
     if zips:
-        query = query.in_("situs_zip", zips)
+        zip_values = ",".join(z for z in zips if re.fullmatch(r"\d{5}", z))
+        if zip_values:
+            query = query.or_(f"zip_code.in.({zip_values}),situs_zip.in.({zip_values})")
     power = (power_filter or "").strip()
     if power:
         query = query.eq("power_status", power)
@@ -380,6 +407,9 @@ def get_bills_with_parcels_filtered(
         query = query.is_("is_favorite", True)
     if (outofstate_filter or "").strip() == "1":
         query = query.is_("is_out_of_state", True)
+    if (new_filter or "").strip() == "1":
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        query = query.gte("added_at", cutoff)
     for column, expr in _CONDITION_BUCKETS.get((condition_filter or "").strip().lower(), []):
         op, _, value = expr.partition(".")
         if op == "is":
@@ -549,8 +579,20 @@ def get_favorites_apns() -> list[str]:
     return [row["apn"] for row in (r.data or []) if row.get("apn")]
 
 
+def _add_to_favorites(apns: list[str]) -> int:
+    """Add APNs to the Favorites list, re-resolving a stale cached list id."""
+    global _favorites_list_id
+    list_id = get_favorites_list_id(create=True)
+    try:
+        return add_properties_to_list(list_id, apns)
+    except Exception:
+        # The cached id goes stale if the list is deleted out from under us.
+        _favorites_list_id = None
+        return add_properties_to_list(get_favorites_list_id(create=True), apns)
+
+
 def add_favorite(apn: str) -> None:
-    add_properties_to_list(get_favorites_list_id(create=True), [apn])
+    _add_to_favorites([apn])
 
 
 def remove_favorite(apn: str) -> None:
@@ -587,7 +629,15 @@ def bulk_add_favorites(apns: list[str]) -> int:
     """Add multiple APNs to favorites. Returns count inserted."""
     if not apns:
         return 0
-    return add_properties_to_list(get_favorites_list_id(create=True), apns)
+    return _add_to_favorites(apns)
+
+
+def bulk_remove_favorites(apns: list[str]) -> int:
+    """Remove multiple APNs from favorites. Returns count removed."""
+    list_id = get_favorites_list_id()
+    if list_id is None:
+        return 0
+    return bulk_remove_properties_from_list(list_id, apns)
 
 
 # ---------------------------------------------------------------------------
@@ -647,8 +697,11 @@ def get_list(list_id: int) -> dict | None:
 
 
 def delete_list(list_id: int) -> bool:
+    global _favorites_list_id
     get_client().table("list_properties").delete().eq("list_id", list_id).execute()
     r = get_client().table("lists").delete().eq("id", list_id).execute()
+    if r.data and _favorites_list_id == list_id:
+        _favorites_list_id = None
     return bool(r.data)
 
 
@@ -736,6 +789,7 @@ def add_properties_to_list_from_filter(
     ownership_filter: str = "",
     primary_resident_age_filter: str = "",
     deceased_count_filter: str = "",
+    new_filter: str = "",
     limit: int = 0,
 ) -> int:
     rows, _ = get_bills_with_parcels_filtered(
@@ -747,6 +801,7 @@ def add_properties_to_list_from_filter(
         delinquent_filter=delinquent_filter,
         condition_filter=condition_filter,
         research_filter=research_filter,
+        new_filter=new_filter,
         occupancy_filter=occupancy_filter,
         ownership_filter=ownership_filter,
         primary_resident_age_filter=primary_resident_age_filter,
@@ -774,6 +829,25 @@ def add_properties_to_list_from_filter(
 def remove_property_from_list(list_id: int, apn: str) -> bool:
     r = get_client().table("list_properties").delete().eq("list_id", list_id).eq("apn", apn).execute()
     return bool(r.data)
+
+
+def bulk_remove_properties_from_list(list_id: int, apns: list[str]) -> int:
+    """Remove multiple APNs from a list. Returns count deleted."""
+    cleaned = [str(apn or "").strip() for apn in apns if str(apn or "").strip()]
+    if not cleaned:
+        return 0
+    deleted = 0
+    for i in range(0, len(cleaned), 200):
+        r = (
+            get_client()
+            .table("list_properties")
+            .delete()
+            .eq("list_id", list_id)
+            .in_("apn", cleaned[i : i + 200])
+            .execute()
+        )
+        deleted += len(r.data or [])
+    return deleted
 
 
 def get_list_route_preview(list_id: int) -> dict:

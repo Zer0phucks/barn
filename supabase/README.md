@@ -1,6 +1,6 @@
 # BARN database
 
-Supabase project **`barn`** — `ndjqmzfqifafsuygdqdz`, created 2026-08-07.
+Supabase project **`barn`** — `zezhsmgtdzlagqwlvjui` (migrated from `ndjqmzfqifafsuygdqdz` on 2026-09-18).
 
 `migrations/` is a **clean-slate baseline**, not an incremental history. It
 replaces two schemas that were never reconciled and are both retired:
@@ -10,7 +10,7 @@ replaces two schemas that were never reconciled and are both retired:
 | `scan/db_migrations/*.sql`                  | 12 unversioned files applied by hand in the SQL editor | folded in here |
 | `barn-scan` repo's `supabase/migrations/` | the PostGIS scouting layer                             | folded in here |
 
-Those targeted older projects (`nrfbgtmbginpcdxmttrq`, `vzgmmlaojvkpbakvgcwh`,
+Those targeted older projects (`nrfbgtmbginpcdxmttrq`, `vzgmmlaojvkpbakvgcwh`, `ndjqmzfqifafsuygdqdz`,
 `kawsyqariasjpzlrrkcc`), all of which predate this one and hold no data worth
 keeping. Don't apply them.
 
@@ -21,7 +21,7 @@ against a live Postgres. Expect to fix something on the first push.
 
 ```bash
 cd barn
-npx supabase link --project-ref ndjqmzfqifafsuygdqdz   # prompts for the DB password
+npx supabase link --project-ref zezhsmgtdzlagqwlvjui   # prompts for the DB password
 npx supabase db push
 ```
 

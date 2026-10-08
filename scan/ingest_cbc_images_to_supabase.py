@@ -68,8 +68,10 @@ def load_env() -> None:
 def get_supabase_client():
     supabase_url = os.environ.get("SUPABASE_URL", "").strip()
     supabase_key = (
-        os.environ.get("SUPABASE_SERVICE_KEY")
+        os.environ.get("SUPABASE_SECRET_KEY")
+        or os.environ.get("SUPABASE_SERVICE_KEY")
         or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        or os.environ.get("SUPABASE_PUBLISHABLE_KEY")
         or os.environ.get("SUPABASE_ANON_KEY")
         or ""
     ).strip()

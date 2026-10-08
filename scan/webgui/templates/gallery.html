@@ -322,6 +322,10 @@
       <input type="checkbox" name="vpt" value="1" {% if vpt_filter=="1" %}checked{% endif %} /> VPT
     </label>
     <label class="fav-filter">
+      <input type="checkbox" name="new" value="1" {% if new_filter=="1" %}checked{% endif %}
+        onchange="if (this.checked) { const s = document.querySelector('select[name=sort]'); const o = document.querySelector('select[name=order]'); if (s) s.value = 'added_at'; if (o) o.value = 'desc'; }" /> New (30d)
+    </label>
+    <label class="fav-filter">
       <input type="checkbox" name="delinquent" value="1" {% if delinquent_filter=="1" %}checked{% endif %} /> Delinquent
     </label>
     <label class="fav-filter">
@@ -402,6 +406,7 @@
           {% if r.power_status == 'ON' %}<span class="badge badge-power-on">⚡ On</span>{% endif %}
           {% if r.deceased_count and r.deceased_count > 0 %}<span class="badge badge-deceased">D</span>{% endif %}
           {% if r.is_favorite %}<span class="badge badge-fav">★</span>{% endif %}
+          {% if r.is_new %}<span class="badge" style="background:#27ae60; color:#fff; font-weight:700;">NEW</span>{% endif %}
           {% if r.in_selected_list %}<span class="badge badge-route">Route</span>{% endif %}
         </div>
       </div>
@@ -411,6 +416,7 @@
           <span>{{ r.city }}{% if r.situs_zip %} {{ r.situs_zip }}{% endif %}</span>
         </div>
         <div class="card-meta">APN: {{ r.apn }}</div>
+        {% if r.added_at %}<div class="card-meta">Added: {{ r.added_at }}</div>{% endif %}
         {% if r.in_selected_list %}<div class="card-meta"><span class="route-chip">In route</span></div>{% endif %}
         {% if r.owner_name %}<div class="card-meta">{{ r.owner_name }}</div>{% endif %}
         {% if r.prop_last_sale_date %}<div class="card-meta">Last Sale: {{ r.prop_last_sale_date }}</div>{% endif %}
@@ -450,7 +456,7 @@
 
   {% if total_pages > 1 %}
   <div class="pager">
-    {% set filter_qs = "q=" ~ q ~ "&zip=" ~ zip_filter ~ "&city=" ~ city_filter ~ "&county=" ~ county_filter ~ "&owner_name=" ~ owner_name_filter ~ "&power=" ~ power_filter ~ "&vpt=" ~ vpt_filter ~ "&delinquent=" ~ delinquent_filter ~ "&condition=" ~ condition_filter ~ "&outofstate=" ~ outofstate_filter ~ "&research=" ~ research_filter ~ "&outreach_stage=" ~ outreach_stage_filter ~ "&list_id=" ~ (list_id or "") ~ "&sort=" ~ sort ~ "&order=" ~ order %}
+    {% set filter_qs = "q=" ~ q ~ "&zip=" ~ zip_filter ~ "&city=" ~ city_filter ~ "&county=" ~ county_filter ~ "&owner_name=" ~ owner_name_filter ~ "&power=" ~ power_filter ~ "&vpt=" ~ vpt_filter ~ "&new=" ~ new_filter ~ "&delinquent=" ~ delinquent_filter ~ "&condition=" ~ condition_filter ~ "&outofstate=" ~ outofstate_filter ~ "&research=" ~ research_filter ~ "&outreach_stage=" ~ outreach_stage_filter ~ "&list_id=" ~ (list_id or "") ~ "&sort=" ~ sort ~ "&order=" ~ order %}
 
     {% if page > 1 %}
       <a href="?{{ filter_qs }}&page=1">« First</a>

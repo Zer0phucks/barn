@@ -588,6 +588,11 @@
       VPT only
     </label>
     <label class="fav-filter">
+      <input type="checkbox" name="new" value="1" {% if new_filter=="1" %}checked{% endif %}
+        onchange="if (this.checked) { const s = document.querySelector('select[name=sort]'); const o = document.querySelector('select[name=order]'); if (s) s.value = 'added_at'; if (o) o.value = 'desc'; }" />
+      New (30d)
+    </label>
+    <label class="fav-filter">
       <input type="checkbox" name="delinquent" value="1" {% if delinquent_filter=="1" %}checked{% endif %} />
       Delinquent
     </label>
@@ -688,6 +693,7 @@
             </div>
           </th>
           <th>City</th>
+          <th>Zip</th>
           <th>Date Added</th>
           <th>Location</th>
           <th>APN</th>
@@ -719,7 +725,13 @@
               onchange="toggleRowSelection('{{ r.apn }}', this.checked)" />
           </td>
           <td>{{ r.city }}</td>
-          <td>{{ r.added_at or "-" }}</td>
+          <td>{{ r.situs_zip or "-" }}</td>
+          <td>
+            <span style="white-space: nowrap;">{{ r.added_at or "-" }}</span>
+            {% if r.is_new %}
+            <span class="pill pill-active" style="background:#27ae60; color:#fff; font-size:10px; padding:1px 5px; margin-left:4px; font-weight:700; border-radius:3px; vertical-align:middle;">NEW</span>
+            {% endif %}
+          </td>
           <td>
             <a href="{{ url_for('property_detail', apn=r.apn, return_to=return_to_path) }}" title="Open Property Workspace">
               {{ r.location_of_property }}
@@ -814,11 +826,11 @@
   <div class="pager">
     {% if page > 1 %}
     <a
-      href="?q={{ q }}&zip={{ zip_filter }}&city={{ city_filter }}&county={{ county_filter }}&owner_name={{ owner_name_filter }}&occupancy_type={{ occupancy_filter }}&ownership_type={{ ownership_filter }}&primary_resident_age={{ primary_resident_age_filter }}&deceased_count={{ deceased_count_filter }}&power={{ power_filter }}&vpt={{ vpt_filter }}&delinquent={{ delinquent_filter }}&condition={{ condition_filter }}&outofstate={{ outofstate_filter }}&research={{ research_filter }}&outreach_stage={{ outreach_stage_filter }}&sort={{ sort }}&order={{ order }}&page_size={{ page_size }}&page={{ page - 1 }}">Prev</a>
+      href="?q={{ q }}&zip={{ zip_filter }}&city={{ city_filter }}&county={{ county_filter }}&owner_name={{ owner_name_filter }}&occupancy_type={{ occupancy_filter }}&ownership_type={{ ownership_filter }}&primary_resident_age={{ primary_resident_age_filter }}&deceased_count={{ deceased_count_filter }}&power={{ power_filter }}&vpt={{ vpt_filter }}&new={{ new_filter }}&delinquent={{ delinquent_filter }}&condition={{ condition_filter }}&outofstate={{ outofstate_filter }}&research={{ research_filter }}&outreach_stage={{ outreach_stage_filter }}&sort={{ sort }}&order={{ order }}&page_size={{ page_size }}&page={{ page - 1 }}">Prev</a>
     {% endif %}
     <span class="muted">Page {{ page }} of {{ total_pages }}</span>
     {% if page < total_pages %} <a
-      href="?q={{ q }}&zip={{ zip_filter }}&city={{ city_filter }}&county={{ county_filter }}&owner_name={{ owner_name_filter }}&occupancy_type={{ occupancy_filter }}&ownership_type={{ ownership_filter }}&primary_resident_age={{ primary_resident_age_filter }}&deceased_count={{ deceased_count_filter }}&power={{ power_filter }}&vpt={{ vpt_filter }}&delinquent={{ delinquent_filter }}&condition={{ condition_filter }}&outofstate={{ outofstate_filter }}&research={{ research_filter }}&outreach_stage={{ outreach_stage_filter }}&sort={{ sort }}&order={{ order }}&page_size={{ page_size }}&page={{ page + 1 }}">
+      href="?q={{ q }}&zip={{ zip_filter }}&city={{ city_filter }}&county={{ county_filter }}&owner_name={{ owner_name_filter }}&occupancy_type={{ occupancy_filter }}&ownership_type={{ ownership_filter }}&primary_resident_age={{ primary_resident_age_filter }}&deceased_count={{ deceased_count_filter }}&power={{ power_filter }}&vpt={{ vpt_filter }}&new={{ new_filter }}&delinquent={{ delinquent_filter }}&condition={{ condition_filter }}&outofstate={{ outofstate_filter }}&research={{ research_filter }}&outreach_stage={{ outreach_stage_filter }}&sort={{ sort }}&order={{ order }}&page_size={{ page_size }}&page={{ page + 1 }}">
       Next</a>
       {% endif %}
   </div>

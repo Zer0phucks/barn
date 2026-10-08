@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Database, List, Map } from "lucide-react";
+import { Database, List, Map, Settings } from "lucide-react";
 import VPTPropertiesTable from "./VPTPropertiesTable";
 import VPTMapView from "./VPTMapView";
+import VPTScannerControl from "./VPTScannerControl";
 import WorkerStatus from "./WorkerStatus";
 import DiscoveriesPanel from "./DiscoveriesPanel";
 import { vptGetEnrichmentStatus, vptGetScanStatus } from "@/services/vptApi";
@@ -92,6 +93,10 @@ export default function VPTDashboard() {
             <Map className="h-4 w-4" />
             Map View
           </TabsTrigger>
+          <TabsTrigger value="scanner" className="gap-2">
+            <Settings className="h-4 w-4" />
+            Scanner Admin
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="properties">
@@ -100,6 +105,10 @@ export default function VPTDashboard() {
 
         <TabsContent value="map">
           <VPTMapView />
+        </TabsContent>
+
+        <TabsContent value="scanner">
+          <VPTScannerControl />
         </TabsContent>
       </Tabs>
     </div>

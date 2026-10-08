@@ -59,16 +59,20 @@ scan_state = {
 }
 
 
-def load_apn_rowjson() -> dict[str, str]:
+def load_apn_rowjson(city: str | None = None) -> dict[str, str]:
     apn_to_rowjson: dict[str, str] = {}
-    with intake_autopilot.canonical_parcels_path().open(newline="", encoding="utf-8", errors="replace") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            apn = (row.get("APN") or "").strip()
-            if not apn:
-                continue
-            if apn not in apn_to_rowjson:
-                apn_to_rowjson[apn] = json.dumps(row, ensure_ascii=True)
+    csv_path = scanner.get_input_csv_path(city=city)
+    if not csv_path.exists():
+        csv_path = intake_autopilot.canonical_parcels_path()
+    if csv_path.exists():
+        with csv_path.open(newline="", encoding="utf-8-sig", errors="replace") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                apn = (row.get("APN") or "").strip()
+                if not apn:
+                    continue
+                if apn not in apn_to_rowjson:
+                    apn_to_rowjson[apn] = json.dumps(row, ensure_ascii=True)
     return apn_to_rowjson
 
 
@@ -99,14 +103,34 @@ def ensure_cache_in_db() -> None:
 
 
 def get_cities_from_csv() -> list[str]:
-    """Get list of unique cities from CSV that have parcels."""
+    """Get list of unique cities from CSV files that have parcels."""
     cities = set()
-    with intake_autopilot.canonical_parcels_path().open(newline="", encoding="utf-8", errors="replace") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            city = (row.get("CITY") or row.get("SitusCity") or "").strip().upper()
-            if city:
-                cities.add(city)
+
+    # Discover known city CSVs in BASE_DIR (e.g. oakland.csv, berkeley.csv)
+    for p in BASE_DIR.glob("*.csv"):
+        stem = p.stem.upper()
+        if stem in SCAN_CITIES:
+            cities.add(stem)
+
+    # Read canonical parcels path
+    canonical = intake_autopilot.canonical_parcels_path()
+    if canonical.exists():
+        try:
+            with canonical.open(newline="", encoding="utf-8-sig", errors="replace") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    city = (row.get("CITY") or row.get("SitusCity") or "").strip().upper()
+                    if city and city != "CITY":
+                        cities.add(city)
+        except Exception as e:
+            print(f"Error reading canonical parcels CSV: {e}")
+
+    # Explicitly ensure Oakland and Berkeley are included if their respective CSVs exist
+    if (BASE_DIR / "oakland.csv").exists():
+        cities.add("OAKLAND")
+    if (BASE_DIR / "berkeley.csv").exists():
+        cities.add("BERKELEY")
+
     # Return in preferred order, then add any others
     ordered = [c for c in SCAN_CITIES if c in cities]
     others = sorted(cities - set(SCAN_CITIES))
@@ -156,14 +180,15 @@ def run_continuous_scan() -> None:
 def run_single_city_scan(city: str) -> None:
     """Scan a single city."""
     global scan_state
+    city_clean = city.strip().upper()
     scan_state["is_running"] = True
-    scan_state["current_city"] = city
-    
+    scan_state["current_city"] = city_clean
+
     try:
-        scanner.main(city=city)
-        scan_state["cities_completed"].append(city)
+        scanner.main(city=city_clean)
+        scan_state["cities_completed"].append(city_clean)
     except Exception as e:
-        print(f"Error scanning {city}: {e}")
+        print(f"Error scanning {city_clean}: {e}")
     finally:
         scan_state["is_running"] = False
         scan_state["current_city"] = None
@@ -224,12 +249,16 @@ def start_scan(city: str | None = None, continuous: bool = False) -> bool:
 
 
 def stop_scan() -> bool:
-    """Stop current scan (only works for continuous mode)."""
+    """Stop current scan (both continuous mode and single-city scans)."""
     global scan_state
+    stopped = False
     if scan_state["continuous_mode"]:
         scan_state["continuous_mode"] = False
-        return True
-    return False
+        stopped = True
+    if scan_state["is_running"]:
+        scanner.request_stop()
+        stopped = True
+    return stopped
 
 
 def main(

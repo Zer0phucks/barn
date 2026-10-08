@@ -11,6 +11,8 @@ import {
   vptGetMarkers,
   vptToggleFavorite,
   vptGetStreetviewImageUrlFromMarker,
+  isWithinDays,
+  formatAddedAt,
   type VPTMarker,
   type VPTFilters,
 } from "@/services/vptApi";
@@ -229,6 +231,17 @@ export default function VPTMapView() {
                   <div>
                     <span className="text-muted-foreground">Last Payment:</span>
                     <span className="ml-2">{selectedMarker.last_payment || "None"}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Date Added:</span>
+                    <span className="ml-2">
+                      {formatAddedAt(selectedMarker.added_at)}
+                      {isWithinDays(selectedMarker.added_at, 30) && (
+                        <Badge className="ml-1.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300 text-[10px] px-1.5 py-0 font-semibold">
+                          New
+                        </Badge>
+                      )}
+                    </span>
                   </div>
                 </div>
 

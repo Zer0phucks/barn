@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_REF="${VPT_SUPABASE_PROJECT_REF:-vzgmmlaojvkpbakvgcwh}"
+PROJECT_REF="${VPT_SUPABASE_PROJECT_REF:-zezhsmgtdzlagqwlvjui}"
 WORKER_PORT="${VPT_WORKER_PORT:-5000}"
 TUNNEL_HOST="${VPT_TUNNEL_HOST:-https://loca.lt}"
 RETRY_SECONDS="${VPT_TUNNEL_RETRY_SECONDS:-3}"

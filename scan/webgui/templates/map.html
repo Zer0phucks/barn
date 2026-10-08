@@ -389,6 +389,10 @@
       VPT Only
     </label>
     <label>
+      <input type="checkbox" id="filter-new" />
+      New (30d)
+    </label>
+    <label>
       <input type="checkbox" id="filter-delinquent" />
       Delinquent Only
     </label>
@@ -860,6 +864,7 @@
     const ownerName = document.getElementById('filter-owner-name').value;
     const power = document.getElementById('filter-power').value;
     const vpt = document.getElementById('filter-vpt').checked;
+    const isNew = document.getElementById('filter-new').checked;
     const delinquent = document.getElementById('filter-delinquent').checked;
     const fav = document.getElementById('filter-fav').checked;
 
@@ -870,6 +875,7 @@
     if (ownerName) params.set('owner_name', ownerName);
     if (power) params.set('power', power);
     if (vpt) params.set('vpt', '1');
+    if (isNew) params.set('new', '1');
     if (delinquent) params.set('delinquent', '1');
     if (fav) params.set('fav', '1');
     if (activeListId) params.set('list_id', activeListId);

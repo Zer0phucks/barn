@@ -63,6 +63,7 @@ export interface VPTMarker {
   condition_score: number | null;
   property_search_url: string;
   mailing_search_url: string;
+  added_at?: string;
 }
 
 export interface VPTFilters {
@@ -288,6 +289,30 @@ const buildStreetviewImageUrl = (lat: number, lng: number, location: string): st
   return "";
 };
 
+export const getThirtyOneDaysAgoIso = (): string => {
+  const d = new Date();
+  d.setDate(d.getDate() - 31);
+  return d.toISOString();
+};
+
+export const isWithinDays = (dateStr?: string | null, days = 30): boolean => {
+  if (!dateStr) return false;
+  const parsed = new Date(dateStr);
+  if (Number.isNaN(parsed.getTime())) return false;
+  const now = new Date();
+  const diffMs = now.getTime() - parsed.getTime();
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  return diffDays >= 0 && diffDays <= days;
+};
+
+export const formatAddedAt = (value?: string | null): string => {
+  const dateStr = value || getThirtyOneDaysAgoIso();
+  const parsed = new Date(dateStr);
+  if (Number.isNaN(parsed.getTime())) return dateStr;
+  return parsed.toLocaleDateString();
+};
+
+
 export const mapRpcRowToProperty = (row: RpcBillRow, favoritesSet: Set<string>): VPTProperty => {
   const parcel = parseRowJson(row.row_json);
   const { lat, lng } = extractCoordinates(parcel);
@@ -295,12 +320,14 @@ export const mapRpcRowToProperty = (row: RpcBillRow, favoritesSet: Set<string>):
   const city = toString(row.city || parcel.SitusCity);
   const situsAddress = toString(parcel.SitusAddress);
   const mailingAddress = toString(parcel.MailingAddress);
+  const rawAddedAt = toString(row.added_at);
+  const addedAt = rawAddedAt || getThirtyOneDaysAgoIso();
 
   return {
     pdf_file: toString(row.pdf_file),
     bill_url: toString(row.bill_url),
     apn: toString(row.apn),
-    added_at: toString(row.added_at),
+    added_at: addedAt,
     parcel_number: toString(row.parcel_number),
     tracer_number: toString(row.tracer_number),
     location_of_property: location,
@@ -353,6 +380,7 @@ const toMarker = (property: VPTProperty): VPTMarker => ({
   condition_score: property.condition_score,
   property_search_url: property.property_search_url,
   mailing_search_url: property.mailing_search_url,
+  added_at: property.added_at,
 });
 
 const fetchFavoritesSet = async (): Promise<Set<string>> => {

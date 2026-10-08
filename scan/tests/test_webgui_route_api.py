@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import csv
 import importlib.util
+import io
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import ModuleType
 from unittest.mock import patch
@@ -92,6 +95,8 @@ class RouteApiTests(unittest.TestCase):
             ), patch.object(
                 self.webgui_app.db, "get_lists", return_value=[{"id": 7, "name": "Route"}]
             ), patch.object(
+                self.webgui_app, "_parcel_zip_by_apn", return_value={}
+            ), patch.object(
                 self.webgui_app, "render_template", side_effect=fake_render_template
             ):
                 response = self.webgui_app.search_page.__wrapped__()
@@ -99,6 +104,38 @@ class RouteApiTests(unittest.TestCase):
         self.assertEqual("rendered", response)
         self.assertEqual(["001", "003"], [row["apn"] for row in rendered["rows"]])
         self.assertEqual(2, rendered["total"])
+
+    def test_search_page_forwards_new_filter(self) -> None:
+        rendered: dict = {}
+
+        def fake_render_template(template_name: str, **context):
+            rendered["template_name"] = template_name
+            rendered.update(context)
+            return "rendered"
+
+        with self.webgui_app.app.test_request_context("/search?new=1&vpt=1"):
+            with patch.object(
+                self.webgui_app.db, "get_favorites_apns", return_value=[]
+            ), patch.object(
+                self.webgui_app.db,
+                "get_bills_with_parcels_filtered",
+                return_value=([], 0),
+            ) as filtered, patch.object(
+                self.webgui_app.db, "get_distinct_zips", return_value=[]
+            ), patch.object(
+                self.webgui_app.db, "get_lists", return_value=[]
+            ), patch.object(
+                self.webgui_app, "_parcel_zip_by_apn", return_value={}
+            ), patch.object(
+                self.webgui_app, "render_template", side_effect=fake_render_template
+            ):
+                response = self.webgui_app.search_page.__wrapped__()
+
+        self.assertEqual("rendered", response)
+        self.assertEqual("1", rendered["new_filter"])
+        call_kwargs = filtered.call_args.kwargs
+        self.assertEqual("1", call_kwargs["new_filter"])
+        self.assertEqual("1", call_kwargs["vpt_filter"])
 
     def test_gallery_list_id_scopes_results_to_selected_route(self) -> None:
         rows = [
@@ -131,6 +168,8 @@ class RouteApiTests(unittest.TestCase):
             ), patch.object(
                 self.webgui_app.db, "get_lists", return_value=[{"id": 7, "name": "Route"}]
             ), patch.object(
+                self.webgui_app, "_parcel_zip_by_apn", return_value={}
+            ), patch.object(
                 self.webgui_app, "render_template", side_effect=fake_render_template
             ):
                 response = self.webgui_app.gallery_page.__wrapped__()
@@ -138,6 +177,365 @@ class RouteApiTests(unittest.TestCase):
         self.assertEqual("rendered", response)
         self.assertEqual(["001", "003"], [row["apn"] for row in rendered["rows"]])
         self.assertEqual(2, rendered["total"])
+
+    def test_lists_api_does_not_touch_favorites(self) -> None:
+        lists = [{"id": 3, "name": "Route"}, {"id": 2, "name": "Favorites"}]
+        with self.webgui_app.app.test_request_context("/api/lists"):
+            with patch.object(
+                self.webgui_app.db, "get_lists", return_value=lists
+            ), patch.object(
+                self.webgui_app.db, "get_favorites_list_id", return_value=2
+            ), patch.object(
+                self.webgui_app.db,
+                "get_client",
+                side_effect=AssertionError("GET /api/lists must not delete favorites"),
+            ):
+                response = self.webgui_app.api_lists_get.__wrapped__()
+
+        self.assertEqual([{"id": 3, "name": "Route"}], response.get_json())
+
+    def test_favorites_details_returns_properties(self) -> None:
+        rows_by_apn = {
+            "001": {
+                "apn": "001",
+                "location": "1 Test St",
+                "city": "OAKLAND",
+                "has_vpt": 1,
+                "zip_code": "94606",
+                "owner_name": "Jane Doe",
+                "delinquent": 0,
+            }
+        }
+
+        with self.webgui_app.app.test_request_context("/api/favorites/details"):
+            with patch.object(
+                self.webgui_app.db, "get_favorites_apns", return_value=["001"]
+            ), patch.object(
+                self.webgui_app, "_map_marker_rows_by_apn", return_value=rows_by_apn
+            ), patch.object(
+                self.webgui_app, "_parcel_zip_by_apn", return_value={}
+            ):
+                response = self.webgui_app.api_favorites_details.__wrapped__()
+
+        properties = response.get_json()["properties"]
+        self.assertEqual("001", properties[0]["apn"])
+        self.assertTrue(properties[0]["is_favorite"])
+        self.assertEqual("94606", properties[0]["situs_zip"])
+        self.assertEqual("Yes", properties[0]["has_vpt"])
+        self.assertEqual("1 Test St", properties[0]["location_of_property"])
+        self.assertEqual(0, properties[0]["queue_position"])
+
+    def test_favorites_bulk_remove_delegates_to_db(self) -> None:
+        with self.webgui_app.app.test_request_context(
+            "/api/favorites/bulk-remove",
+            method="POST",
+            json={"apns": ["001", " 002 ", "", None]},
+        ):
+            with patch.object(
+                self.webgui_app.db, "bulk_remove_favorites", return_value=2
+            ) as remove:
+                response = self.webgui_app.api_favorites_bulk_remove.__wrapped__()
+
+        self.assertEqual({"status": "ok", "removed": 2}, response.get_json())
+        remove.assert_called_once_with(["001", "002"])
+
+    def test_favorites_bulk_remove_requires_apns(self) -> None:
+        with self.webgui_app.app.test_request_context(
+            "/api/favorites/bulk-remove", method="POST", json={"apns": []}
+        ):
+            response, status = self.webgui_app.api_favorites_bulk_remove.__wrapped__()
+
+        self.assertEqual(400, status)
+
+    def test_list_bulk_remove_properties_delegates_to_db(self) -> None:
+        with self.webgui_app.app.test_request_context(
+            "/api/lists/7/remove-properties",
+            method="POST",
+            json={"apns": ["001", "002"]},
+        ):
+            with patch.object(
+                self.webgui_app.db, "get_list", return_value={"id": 7, "name": "Route"}
+            ), patch.object(
+                self.webgui_app.db, "bulk_remove_properties_from_list", return_value=2
+            ) as remove:
+                response = self.webgui_app.api_lists_remove_properties.__wrapped__(7)
+
+        self.assertEqual({"success": True, "count": 2}, response.get_json())
+        remove.assert_called_once_with(7, ["001", "002"])
+
+    def test_list_bulk_remove_missing_list_returns_404(self) -> None:
+        with self.webgui_app.app.test_request_context(
+            "/api/lists/99/remove-properties",
+            method="POST",
+            json={"apns": ["001"]},
+        ):
+            with patch.object(self.webgui_app.db, "get_list", return_value=None):
+                response, status = self.webgui_app.api_lists_remove_properties.__wrapped__(99)
+
+        self.assertEqual(404, status)
+
+    def test_list_detail_returns_list_view_rows(self) -> None:
+        rows_by_apn = {
+            "001": {
+                "apn": "001",
+                "location": "1 Test St",
+                "city": "OAKLAND",
+                "has_vpt": 0,
+                "zip_code": "94606",
+            }
+        }
+        with self.webgui_app.app.test_request_context("/api/lists/7"):
+            with patch.object(
+                self.webgui_app.db, "get_list", return_value={"id": 7, "name": "Route"}
+            ), patch.object(
+                self.webgui_app.db,
+                "get_list_properties",
+                return_value=[{"apn": "001", "sort_order": 0}],
+            ), patch.object(
+                self.webgui_app, "_map_marker_rows_by_apn", return_value=rows_by_apn
+            ), patch.object(
+                self.webgui_app, "_parcel_zip_by_apn", return_value={}
+            ), patch.object(
+                self.webgui_app.db, "get_favorites_apns", return_value=[]
+            ), patch.object(
+                self.webgui_app.db, "get_list_route_preview", return_value={"total": 0, "stops": []}
+            ):
+                response = self.webgui_app.api_lists_get_one.__wrapped__(7)
+
+        properties = response.get_json()["properties"]
+        self.assertEqual("94606", properties[0]["situs_zip"])
+        self.assertEqual("No", properties[0]["has_vpt"])
+
+    def test_favorites_list_cannot_be_deleted(self) -> None:
+        with self.webgui_app.app.test_request_context("/api/lists/2", method="DELETE"):
+            with patch.object(
+                self.webgui_app.db, "get_favorites_list_id", return_value=2
+            ), patch.object(
+                self.webgui_app.db,
+                "delete_list",
+                side_effect=AssertionError("Favorites must not be deleted"),
+            ):
+                response, status = self.webgui_app.api_lists_delete.__wrapped__(2)
+
+        self.assertEqual(400, status)
+
+    def test_favorites_export_returns_csv(self) -> None:
+        bills = [
+            {
+                "apn": "001",
+                "location_of_property": "1 Test St",
+                "city": "OAKLAND",
+                "zip_code": "94606",
+                "has_vpt": 1,
+                "vpt_marker": "MEAS-W",
+                "delinquent": 0,
+                "power_status": "off",
+                "condition_score": 7.5,
+                "owner_name": "Jane Doe",
+                "research_status": "completed",
+                "tax_year": "2024-2025",
+                "last_payment": "DEC 10, 2024",
+                "bill_url": "https://example.com/bill",
+                "lat": 37.8,
+                "lng": -122.2,
+            }
+        ]
+        with self.webgui_app.app.test_request_context("/api/favorites/export"):
+            with patch.object(
+                self.webgui_app.db, "get_favorites_list_id", return_value=2
+            ), patch.object(
+                self.webgui_app, "_list_apns_in_order", return_value=["001"]
+            ), patch.object(
+                self.webgui_app, "_chunked_in_query", return_value=bills
+            ):
+                response = self.webgui_app.api_favorites_export.__wrapped__()
+
+        self.assertEqual("text/csv", response.mimetype)
+        self.assertIn("attachment; filename=\"favorites-", response.headers["Content-Disposition"])
+        rows = list(csv.reader(io.StringIO(response.get_data(as_text=True))))
+        self.assertEqual("APN", rows[0][0])
+        self.assertEqual("Zip", rows[0][3])
+        self.assertEqual(["001", "1 Test St", "OAKLAND", "94606"], rows[1][:4])
+        self.assertEqual("Yes", rows[1][4])
+        self.assertEqual("No", rows[1][6])
+
+    def test_list_export_returns_csv_with_list_name(self) -> None:
+        with self.webgui_app.app.test_request_context("/api/lists/7/export"):
+            with patch.object(
+                self.webgui_app.db, "get_list", return_value={"id": 7, "name": "My Route"}
+            ), patch.object(
+                self.webgui_app, "_list_apns_in_order", return_value=[]
+            ), patch.object(
+                self.webgui_app, "_chunked_in_query", return_value=[]
+            ):
+                response = self.webgui_app.api_list_export.__wrapped__(7)
+
+        self.assertIn("attachment; filename=\"my-route-", response.headers["Content-Disposition"])
+        rows = list(csv.reader(io.StringIO(response.get_data(as_text=True))))
+        self.assertEqual(1, len(rows))
+
+    def test_list_export_missing_list_returns_404(self) -> None:
+        with self.webgui_app.app.test_request_context("/api/lists/99/export"):
+            with patch.object(self.webgui_app.db, "get_list", return_value=None):
+                response, status = self.webgui_app.api_list_export.__wrapped__(99)
+
+        self.assertEqual(404, status)
+
+    def test_parcel_zip_lookup_reads_zipcode_key(self) -> None:
+        parcels = [
+            {"apn": "001", "row_json": {"ZIPCODE": "94606"}},
+            {"apn": "002", "row_json": '{"SitusZip": "94607"}'},
+            {"apn": "003", "row_json": {}},
+        ]
+        with patch.object(self.webgui_app, "_chunked_in_query", return_value=parcels):
+            zips = self.webgui_app._parcel_zip_by_apn(["001", "002", "003"])
+
+        self.assertEqual({"001": "94606", "002": "94607"}, zips)
+
+    def test_search_page_fills_zip_from_parcel_when_row_has_none(self) -> None:
+        rows = [self._search_row("001", "1 Test St")]
+        rendered: dict = {}
+
+        def fake_render_template(template_name: str, **context):
+            rendered["template_name"] = template_name
+            rendered.update(context)
+            return "rendered"
+
+        with self.webgui_app.app.test_request_context("/search"):
+            with patch.object(
+                self.webgui_app.db, "get_favorites_apns", return_value=[]
+            ), patch.object(
+                self.webgui_app.db,
+                "get_bills_with_parcels_filtered",
+                return_value=(rows, 1),
+            ), patch.object(
+                self.webgui_app.db, "get_distinct_zips", return_value=[]
+            ), patch.object(
+                self.webgui_app.db, "get_lists", return_value=[]
+            ), patch.object(
+                self.webgui_app,
+                "_parcel_zip_by_apn",
+                return_value={"001": "94606"},
+            ), patch.object(
+                self.webgui_app, "render_template", side_effect=fake_render_template
+            ):
+                self.webgui_app.search_page.__wrapped__()
+
+        self.assertEqual("94606", rendered["rows"][0]["situs_zip"])
+
+    def test_property_detail_falls_back_to_parcel_zipcode(self) -> None:
+        row = {
+            "apn": "001",
+            "location_of_property": "1 Test St",
+            "city": "OAKLAND",
+            "power_status": "",
+            "has_vpt": 0,
+            "delinquent": 0,
+            "row_json": {"ZIPCODE": "94606"},
+        }
+        rendered: dict = {}
+
+        def fake_render_template(template_name: str, **context):
+            rendered["template_name"] = template_name
+            rendered.update(context)
+            return "rendered"
+
+        with self.webgui_app.app.test_request_context("/property/001"):
+            with patch.object(
+                self.webgui_app.db, "get_bill_with_parcel", return_value=row
+            ), patch.object(
+                self.webgui_app.db, "has_favorite", return_value=False
+            ), patch.object(
+                self.webgui_app, "render_template", side_effect=fake_render_template
+            ):
+                self.webgui_app.property_detail.__wrapped__("001")
+
+        self.assertEqual("94606", rendered["property"]["situs_zip"])
+
+    def test_map_new_filter_uses_added_at_window(self) -> None:
+        now = datetime.now(timezone.utc)
+        base_kwargs = dict(
+            q="",
+            zip_values=set(),
+            power_filter="",
+            fav_filter="",
+            city_filter="",
+            vpt_filter="",
+            delinquent_filter="",
+            owner_name_filter="",
+            favorites_set=set(),
+        )
+        recent = {"apn": "001", "added_at": (now - timedelta(days=3)).isoformat()}
+        old = {"apn": "002", "added_at": (now - timedelta(days=90)).isoformat()}
+        missing = {"apn": "003", "added_at": None}
+
+        self.assertTrue(
+            self.webgui_app._row_matches_map_filters(recent, {}, new_filter="1", **base_kwargs)
+        )
+        self.assertFalse(
+            self.webgui_app._row_matches_map_filters(old, {}, new_filter="1", **base_kwargs)
+        )
+        self.assertFalse(
+            self.webgui_app._row_matches_map_filters(missing, {}, new_filter="1", **base_kwargs)
+        )
+        self.assertTrue(
+            self.webgui_app._row_matches_map_filters(old, {}, new_filter="", **base_kwargs)
+        )
+
+    def test_map_zip_filter_uses_row_zip_code(self) -> None:
+        base_kwargs = dict(
+            q="",
+            power_filter="",
+            fav_filter="",
+            city_filter="",
+            vpt_filter="",
+            delinquent_filter="",
+            owner_name_filter="",
+            new_filter="",
+            favorites_set=set(),
+        )
+        row = {"apn": "001", "zip_code": "94606", "row_json": {}}
+
+        self.assertTrue(
+            self.webgui_app._row_matches_map_filters(row, {}, zip_values={"94606"}, **base_kwargs)
+        )
+        self.assertFalse(
+            self.webgui_app._row_matches_map_filters(row, {}, zip_values={"94704"}, **base_kwargs)
+        )
+
+    def test_markers_api_forwards_new_filter(self) -> None:
+        with self.webgui_app.app.test_request_context("/api/markers?new=1&vpt=1"):
+            with patch.object(
+                self.webgui_app.db, "get_favorites_apns", return_value=[]
+            ), patch.object(
+                self.webgui_app.db,
+                "get_bills_with_parcels_filtered",
+                return_value=([], 0),
+            ) as filtered:
+                response = self.webgui_app.api_markers.__wrapped__()
+
+        self.assertEqual(200, response.status_code)
+        call_kwargs = filtered.call_args.kwargs
+        self.assertEqual("1", call_kwargs["new_filter"])
+        self.assertEqual("1", call_kwargs["vpt_filter"])
+
+    def test_markers_api_filters_list_rows_by_new(self) -> None:
+        now = datetime.now(timezone.utc)
+        rows = [self._search_row("001", "1 Test St"), self._search_row("002", "2 Test St")]
+        rows[0].update({"added_at": (now - timedelta(days=2)).isoformat(), "lat": 37.8, "lng": -122.2})
+        rows[1].update({"added_at": (now - timedelta(days=200)).isoformat(), "lat": 37.9, "lng": -122.3})
+
+        with self.webgui_app.app.test_request_context("/api/markers?new=1&list_id=7"):
+            with patch.object(
+                self.webgui_app.db, "get_favorites_apns", return_value=[]
+            ), patch.object(
+                self.webgui_app.db, "get_list", return_value={"id": 7, "name": "Route"}
+            ), patch.object(
+                self.webgui_app, "_get_list_map_rows", return_value=rows
+            ):
+                response = self.webgui_app.api_markers.__wrapped__()
+
+        self.assertEqual(["001"], [item["apn"] for item in response.get_json()["items"]])
 
     @staticmethod
     def _search_row(apn: str, address: str) -> dict:

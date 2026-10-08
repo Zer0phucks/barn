@@ -46,16 +46,12 @@ MEAS_M_MARKERS = [
     "BERKELEY VPT",
     "Measure M",
     "MEASURE M",
-    # Berkeley VPT is exactly $6,000
-    "$6,000.00",
-    "$6000.00",
-    "6,000.00",
-    # Additional patterns
     "VACANT PROPERTY TAX",
     "VACANT PARCEL TAX",
     "VPT BERKELEY",
 ]
 VPT_MARKERS = [MEAS_W_MARKER] + MEAS_M_MARKERS
+
 
 MAX_RETRIES = 3
 RETRY_BACKOFF_SEC = 1.5
@@ -67,82 +63,115 @@ MAX_WORKERS = int(os.getenv("VPT_MAX_WORKERS", "8"))
 _slow_mode = False
 _slow_mode_multiplier = 1.0
 CHROME_PATH = "/usr/bin/google-chrome"
+OUTPUT_DIR = BASE_DIR / "bills"
+CDP_URL = os.environ.get("CDP_URL", "").strip()
+_stop_requested = False
 
 
-def get_input_csv_path() -> Path:
+def request_stop() -> None:
+    """Request the running scanner to stop gracefully."""
+    global _stop_requested
+    _stop_requested = True
+
+
+def is_stop_requested() -> bool:
+    """Check if stop has been requested."""
+    return _stop_requested
+
+
+def get_browser(playwright_instance, cdp_url: str | None = None):
+    """
+    Get browser for scanning. Defaults to an isolated headless Chrome/Chromium
+    process so it runs quietly in the background without stealing OS focus or
+    mouse cursor from the user.
+    If CDP_URL is explicitly configured, it connects via CDP.
+    Returns (browser, is_cdp).
+    """
+    url = cdp_url if cdp_url is not None else CDP_URL
+    if url:
+        try:
+            browser = playwright_instance.chromium.connect_over_cdp(url)
+            print(f"Connected to Chrome CDP session at {url}")
+            return browser, True
+        except Exception as e:
+            print(f"Could not connect to Chrome CDP at {url} ({e}); using headless browser")
+
+    executable = CHROME_PATH if os.path.exists(CHROME_PATH) else None
+    browser = playwright_instance.chromium.launch(
+        headless=True,
+        executable_path=executable,
+        args=[
+            "--disable-blink-features=AutomationControlled",
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+        ],
+    )
+    return browser, False
+
+
+def get_input_csv_path(city: str | None = None) -> Path:
+    if city:
+        city_slug = re.sub(r"[^a-zA-Z0-9_-]", "", city.strip().lower())
+        city_csv = BASE_DIR / f"{city_slug}.csv"
+        if city_csv.exists():
+            return city_csv
+
     configured_path = os.environ.get("PARCELS_CSV_PATH", "").strip()
     if configured_path:
         path = Path(configured_path).expanduser()
         if not path.is_absolute():
             path = BASE_DIR / path
-        return path
+        if path.exists():
+            return path
     if INPUT_CSV.exists():
         return INPUT_CSV
+    oakland_csv = BASE_DIR / "oakland.csv"
+    if oakland_csv.exists():
+        return oakland_csv
     return LEGACY_INPUT_CSV
 
 
-def fetch_text(url: str) -> str:
-    """Fetch a URL with basic retry and adaptive throttling.
+def _safe_url(url: str) -> str:
+    import urllib.parse
+    parts = urllib.parse.urlsplit(url.strip())
+    path = urllib.parse.quote(parts.path)
+    query = urllib.parse.quote(parts.query, safe="=&?+")
+    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, path, query, parts.fragment))
 
-    If we start seeing HTTP 429/503 responses, we:
-    - Sleep longer before retrying this request.
-    - Enable "slow mode" for the rest of the run, which multiplies
-      the polite REQUEST_DELAY_SEC between successful calls.
-    """
+
+def fetch_text(url: str) -> str:
+    """Fetch a URL with basic retry, safe URL quoting, and adaptive throttling."""
     global _slow_mode, _slow_mode_multiplier
 
+    safe_url = _safe_url(url)
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            req = Request(safe_url, headers={"User-Agent": "Mozilla/5.0"})
             with urlopen(req, timeout=30) as resp:
                 text = resp.read().decode("utf-8", "replace")
-                # Base delay, scaled if we've previously been rate-limited.
                 delay = REQUEST_DELAY_SEC * _slow_mode_multiplier
                 if delay > 0:
                     time.sleep(delay)
                 return text
         except HTTPError as exc:
             status = getattr(exc, "code", None)
-            # Treat 429 / 503 as rate limiting and slow down aggressively.
             if status in (429, 503):
                 print(
                     f"Rate-limit detected (HTTP {status}) on {url} "
                     "- backing off and slowing scan."
                 )
                 _slow_mode = True
-                # Increase delay multiplier (cap at a reasonable ceiling)
                 _slow_mode_multiplier = min(_slow_mode_multiplier * 2.0, 8.0)
-                # Long backoff before retrying this request
                 time.sleep(30)
             else:
                 if attempt == MAX_RETRIES:
-                    raise
+                    return ""
                 time.sleep(RETRY_BACKOFF_SEC * attempt)
-        except URLError as exc:
+        except Exception:
             if attempt == MAX_RETRIES:
-                raise
+                return ""
             time.sleep(RETRY_BACKOFF_SEC * attempt)
     return ""
-
-
-def get_latest_bill_info(apn: str) -> tuple[str | None, int | None]:
-    html_text = fetch_text(ACCOUNT_SUMMARY + apn)
-    # Extract view-bill links and pick the highest rollYear
-    links = re.findall(r'href="([^"]+view-bill[^"]+)"', html_text)
-    if not links:
-        return None, None
-    best_link = None
-    best_year = -1
-    for link in links:
-        link = html.unescape(link)
-        m = re.search(r"rollYear=([0-9]{4})", link)
-        year = int(m.group(1)) if m else -1
-        if year > best_year:
-            best_year = year
-            best_link = link
-    if not best_link:
-        return None, None
-    return BASE_URL + best_link, (best_year if best_year > 0 else None)
 
 
 def _is_bill_delinquent(html_text: str, debug_apn: str | None = None) -> bool:
@@ -179,36 +208,205 @@ def _is_bill_delinquent(html_text: str, debug_apn: str | None = None) -> bool:
     return False
 
 
-def check_property_taxes(apn: str) -> dict:
+def check_bill_vpt(bill_html: str, city: str | None = None) -> tuple[bool, str | None]:
+    """
+    Check bill HTML for Oakland Measure W or Berkeley Measure M VPT charges.
+    Eliminates false positives from large assessments (e.g. $756,000.00).
+    """
+    if not bill_html:
+        return False, None
+
+    city_upper = (city or "").strip().upper()
+
+    # 1. Direct explicit text markers
+    explicit_markers = [
+        "MEAS-W OAKLAND VPT",
+        "MEAS-W",
+        "MEAS-M BERKELEY",
+        "MEAS-M",
+        "MEAS M BERKELEY",
+        "MEAS M",
+        "BERKELEY VPT",
+        "VACANT PROPERTY TAX",
+        "VACANT PARCEL TAX",
+        "VPT BERKELEY",
+    ]
+    for marker in explicit_markers:
+        if marker in bill_html:
+            return True, marker
+
+    # 2. Check table.fixed-charges specifically for Berkeley Measure M charges
+    fixed_charges_match = re.search(
+        r'<table[^>]*class=["\'][^"\']*fixed-charges[^"\']*["\'][^>]*>(.*?)</table>',
+        bill_html,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if fixed_charges_match:
+        table_html = fixed_charges_match.group(1)
+        rows = re.findall(r'<tr[^>]*>(.*?)</tr>', table_html, re.DOTALL | re.IGNORECASE)
+        for r in rows:
+            for marker in explicit_markers:
+                if marker in r:
+                    return True, marker
+            if city_upper == "BERKELEY" or not city_upper:
+                if re.search(r'(?<![\d,])\$\s*(?:3,000|6,000)\.00(?!\d)', r):
+                    desc_match = re.search(r'<td[^>]*>(.*?)</td>', r, re.DOTALL | re.IGNORECASE)
+                    desc = re.sub(r'<[^>]+>', '', desc_match.group(1)).strip() if desc_match else ""
+                    if "PARAMEDIC" not in desc.upper():
+                        return True, f"BERKELEY VPT {desc} $6,000.00".strip()
+
+    return False, None
+
+
+def check_property_taxes_with_page(apn: str, page, city: str | None = None) -> dict:
+    """
+    Check property tax status using an existing Playwright/CDP page.
+    """
+    clean_apn = re.sub(r"\s+", " ", (apn or "")).strip()
+    if not clean_apn:
+        return {
+            "has_vpt": False,
+            "is_delinquent": False,
+            "bill_url": None,
+            "roll_year": None,
+            "vpt_marker": None,
+            "bill_html": "",
+        }
+
+    try:
+        # Navigate to search page if not already there
+        if not page.url.startswith("https://propertytax.alamedacountyca.gov/search"):
+            page.goto("https://propertytax.alamedacountyca.gov/search", timeout=15000)
+
+        # Switch to Parcel Number search via DOM click to avoid hijacking cursor
+        page.evaluate("""() => {
+            const toggle = document.querySelector('#toggleParcel');
+            if (toggle) toggle.click();
+        }""")
+        page.wait_for_timeout(200)
+
+        # Populate APN inputs and submit search via DOM events (zero mouse/pointer hijacking)
+        page.evaluate("""(cleanApn) => {
+            const disp = document.querySelector('#displayApn');
+            if (disp) {
+                disp.value = cleanApn;
+                disp.dispatchEvent(new Event('input', { bubbles: true }));
+                disp.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            const hidden = document.querySelector('#apn');
+            if (hidden) {
+                hidden.value = cleanApn;
+            }
+            const search = document.querySelector('#searchButton');
+            if (search) search.click();
+        }""", clean_apn)
+
+        # Wait for account summary or results
+        try:
+            page.wait_for_url("**/account-summary*", timeout=10000)
+        except Exception:
+            pass
+
+        try:
+            page.wait_for_selector('form[id^="view-bill-form"]', state="attached", timeout=6000)
+        except Exception:
+            pass
+
+        forms = page.query_selector_all('form[id^="view-bill-form"]')
+        if not forms:
+            return {
+                "has_vpt": False,
+                "is_delinquent": False,
+                "bill_url": None,
+                "roll_year": None,
+                "vpt_marker": None,
+                "bill_html": "",
+            }
+
+        # Select highest rollYear SEC bill (or highest rollYear)
+        best_form = forms[0]
+        best_year = -1
+        for f in forms:
+            ry = f.query_selector('input[name="rollYear"]')
+            tt = f.query_selector('input[name="taxType"]')
+            val = ry.get_attribute("value") if ry else None
+            tax_type = tt.get_attribute("value") if tt else ""
+            y = int(val) if val and val.isdigit() else 0
+            if tax_type == "SEC":
+                y += 10000
+            if y > best_year:
+                best_year = y
+                best_form = f
+
+        ry = best_form.query_selector('input[name="rollYear"]')
+        val = ry.get_attribute("value") if ry else None
+        roll_year = int(val) if val and val.isdigit() else None
+
+        with page.expect_navigation(timeout=10000):
+            best_form.evaluate("f => f.submit()")
+
+        bill_url = page.url
+        bill_html = page.content()
+
+        has_vpt, vpt_marker = check_bill_vpt(bill_html, city)
+        is_delinquent = _is_bill_delinquent(bill_html, debug_apn=clean_apn)
+
+        return {
+            "has_vpt": has_vpt,
+            "is_delinquent": is_delinquent,
+            "bill_url": bill_url,
+            "roll_year": roll_year,
+            "vpt_marker": vpt_marker,
+            "bill_html": bill_html,
+        }
+    except Exception as exc:
+        print(f"Error checking APN {clean_apn}: {exc}")
+        return {
+            "has_vpt": False,
+            "is_delinquent": False,
+            "bill_url": None,
+            "roll_year": None,
+            "vpt_marker": None,
+            "bill_html": "",
+        }
+
+
+def check_property_taxes(apn: str, page=None, city: str | None = None) -> dict:
     """
     Check property tax status for an APN.
-    Returns dict with: has_vpt, is_delinquent, bill_url, roll_year, vpt_marker.
-    VPT is only detected for Oakland (MEAS-W) and Berkeley (MEAS-M); other cities have no VPT in this scanner.
+    Returns dict with: has_vpt, is_delinquent, bill_url, roll_year, vpt_marker, bill_html.
     """
-    bill_url, roll_year = get_latest_bill_info(apn)
-    if not bill_url:
-        return {"has_vpt": False, "is_delinquent": False, "bill_url": None, "roll_year": None, "vpt_marker": None}
-    
-    html_text = fetch_text(bill_url)
-    
-    # Check for VPT markers
-    has_vpt = False
-    vpt_marker = None
-    for marker in VPT_MARKERS:
-        if marker in html_text:
-            has_vpt = True
-            vpt_marker = marker
-            break
-    
-    is_delinquent = _is_bill_delinquent(html_text, debug_apn=apn)
+    if page is not None:
+        return check_property_taxes_with_page(apn, page, city=city)
 
-    return {
-        "has_vpt": has_vpt,
-        "is_delinquent": is_delinquent,
-        "bill_url": bill_url,
-        "roll_year": roll_year,
-        "vpt_marker": vpt_marker
-    }
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser, is_cdp = get_browser(p)
+            try:
+                context = browser.contexts[0] if browser.contexts else browser.new_context()
+                p_page = context.new_page()
+                try:
+                    return check_property_taxes_with_page(apn, p_page, city=city)
+                finally:
+                    p_page.close()
+            finally:
+                browser.close()
+    except Exception as exc:
+        print(f"Browser check failed for {apn}: {exc}")
+        return {
+            "has_vpt": False,
+            "is_delinquent": False,
+            "bill_url": None,
+            "roll_year": None,
+            "vpt_marker": None,
+            "bill_html": "",
+        }
+
+
+def get_latest_bill_info(apn: str) -> tuple[str | None, int | None]:
+    result = check_property_taxes(apn)
+    return result["bill_url"], result["roll_year"]
 
 
 def check_meas_w(apn: str) -> tuple[bool, str | None, int | None]:
@@ -327,7 +525,7 @@ def extract_bill_fields(text: str) -> dict[str, str]:
     return fields
 
 
-def extract_bill_fields_from_html(html_text: str) -> dict[str, str]:
+def extract_bill_fields_from_html(html_text: str, city: str | None = None) -> dict[str, str]:
     fields: dict[str, str] = {}
 
     # Parcel Number (inside <span class="no-link">)
@@ -355,14 +553,8 @@ def extract_bill_fields_from_html(html_text: str) -> dict[str, str]:
     if m:
         fields["last_payment"] = m.group(1)
 
-    # Check for VPT markers
-    has_vpt = False
-    vpt_marker = None
-    for marker in VPT_MARKERS:
-        if marker in html_text:
-            has_vpt = True
-            vpt_marker = marker
-            break
+    # Check for VPT markers (Oakland Measure W & Berkeley Measure M)
+    has_vpt, vpt_marker = check_bill_vpt(html_text, city=city)
     fields["has_vpt"] = "1" if has_vpt else "0"
     fields["vpt_marker"] = vpt_marker or ""
 
@@ -376,12 +568,25 @@ def init_db(conn=None) -> None:
     pass
 
 
+def _zip_from_row_json(row_json: str | None) -> str | None:
+    """ZIP from a county parcel row; current files use ZIPCODE, older ones SitusZip."""
+    if not row_json:
+        return None
+    try:
+        row_data = json.loads(row_json)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    zip_code = str(row_data.get("ZIPCODE") or row_data.get("SitusZip") or "").strip()
+    return zip_code or None
+
+
 def upsert_db(
     apn: str,
     bill_url: str,
     bill_html: str,
     row_json: str | None,
     power_status: str | None = None,
+    added_at: str | None = None,
 ) -> None:
     import db
     city = None
@@ -400,7 +605,7 @@ def upsert_db(
             lat, lng = latlng
         db.upsert_parcel(apn, row_json)
 
-    fields = extract_bill_fields_from_html(bill_html)
+    fields = extract_bill_fields_from_html(bill_html, city=city)
     raw_text = html_to_text(bill_html)
     db.upsert_bill(
         apn=apn,
@@ -419,6 +624,8 @@ def upsert_db(
         city=city,
         lat=lat,
         lng=lng,
+        zip_code=_zip_from_row_json(row_json),
+        added_at=added_at,
     )
     db.upsert_result(apn, None)
 
@@ -562,20 +769,26 @@ TARGET_CITY: str | None = None  # Set via --city argument
 
 
 def main(city: str | None = None) -> None:
-    global TARGET_CITY
+    global TARGET_CITY, _stop_requested
+    _stop_requested = False
     if city:
-        TARGET_CITY = city.upper()
-    
+        TARGET_CITY = city.strip().upper()
+
+    csv_path = get_input_csv_path(city=TARGET_CITY)
+    if not csv_path.exists():
+        print(f"Parcel CSV not found at {csv_path}")
+        return
+
     apn_to_address: dict[str, str] = {}
     apn_order: list[str] = []
     apn_to_rowjson: dict[str, str] = {}
 
-    with get_input_csv_path().open(newline="", encoding="utf-8", errors="replace") as f:
+    with csv_path.open(newline="", encoding="utf-8-sig", errors="replace") as f:
         reader = csv.DictReader(f)
         for row in reader:
             row_city = row.get("CITY", row.get("SitusCity", "")).strip().upper()
-            # Filter by target city if specified
-            if TARGET_CITY and row_city != TARGET_CITY:
+            # Filter by target city if specified and city field is present
+            if TARGET_CITY and row_city and row_city != TARGET_CITY:
                 continue
             apn = row.get("APN", "").strip()
             address = row.get("ADDRESS", row.get("MailingAddress", "")).strip()
@@ -592,50 +805,64 @@ def main(city: str | None = None) -> None:
     if total == 0:
         print(f"No parcels found for city: {TARGET_CITY or 'ALL'}")
         return
-    
-    # APNs that are already in the cache will NOT be re-scanned.
-    # They may still be synced into the DB by other utilities
-    # (e.g. ensure_cache_in_db), but this main scanner only
-    # hits the tax site for brand‑new APNs.
+
     cached_apns_in_city = {apn for apn in apn_order if apn in cache}
     to_process = [apn for apn in apn_order if apn not in cache]
 
     print(f"Scanning {total} parcels for city: {TARGET_CITY or 'ALL'}")
     print(f"  - {len(cached_apns_in_city)} already in cache; {len(to_process)} to scan")
 
-    # 'processed' counts both cached APNs (already handled in prior runs)
-    # and newly scanned APNs, to keep progress logs intuitive.
+    if not to_process:
+        print(f"All {total} parcels for {TARGET_CITY or 'ALL'} are already cached.")
+        return
+
     processed = len(cached_apns_in_city)
     hits = 0
 
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(check_property_taxes, apn): apn for apn in to_process}
-        for future in as_completed(futures):
-            apn = futures[future]
-            processed += 1
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        browser, is_cdp = get_browser(p)
+        try:
+            context = browser.contexts[0] if browser.contexts else browser.new_context()
+            page = context.new_page()
             try:
-                result = future.result()
-            except Exception:
-                # Leave un-cached so it can be retried later.
-                continue
+                for apn in to_process:
+                    if _stop_requested:
+                        print(f"[{TARGET_CITY or 'ALL'}] Stop requested. Ending scan.")
+                        break
 
-            has_vpt = result["has_vpt"]
-            is_delinquent = result["is_delinquent"]
-            bill_url = result["bill_url"]
-            roll_year = result["roll_year"]
-            vpt_marker = result["vpt_marker"]
+                    processed += 1
+                    try:
+                        if page.is_closed():
+                            page = context.new_page()
+                        result = check_property_taxes_with_page(apn, page, city=TARGET_CITY)
+                    except Exception as e:
+                        print(f"[{TARGET_CITY or 'ALL'}] Error scanning {apn}: {e}")
+                        continue
 
-            append_cache(apn, has_vpt, is_delinquent, bill_url, roll_year, vpt_marker)
-            
-            # Save to DB if VPT or delinquent
-            if (has_vpt or is_delinquent) and bill_url:
-                bill_html = fetch_text(bill_url)
-                upsert_db(apn, bill_url, bill_html, apn_to_rowjson.get(apn))
-                hits += 1
+                    has_vpt = result["has_vpt"]
+                    is_delinquent = result["is_delinquent"]
+                    bill_url = result["bill_url"]
+                    roll_year = result["roll_year"]
+                    vpt_marker = result["vpt_marker"]
+                    bill_html = result.get("bill_html", "")
 
-            if processed % 100 == 0:
-                print(f"[{TARGET_CITY or 'ALL'}] Processed {processed}/{total} APNs; VPT/Delinquent: {hits}")
-    
+                    append_cache(apn, has_vpt, is_delinquent, bill_url, roll_year, vpt_marker)
+
+                    if (has_vpt or is_delinquent) and bill_url:
+                        if not bill_html:
+                            bill_html = fetch_text(bill_url)
+                        upsert_db(apn, bill_url, bill_html, apn_to_rowjson.get(apn))
+                        hits += 1
+
+                    if processed % 10 == 0:
+                        print(f"[{TARGET_CITY or 'ALL'}] Processed {processed}/{total} APNs; VPT/Delinquent: {hits}")
+            finally:
+                if not page.is_closed():
+                    page.close()
+        finally:
+            browser.close()
+
     print(f"[{TARGET_CITY or 'ALL'}] Scan complete. Total: {total}, VPT/Delinquent found: {hits}")
 
 

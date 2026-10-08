@@ -16,8 +16,11 @@ from urllib.request import Request, urlopen
 from urllib.parse import quote
 
 # Supabase config
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://vzgmmlaojvkpbakvgcwh.supabase.co")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://zezhsmgtdzlagqwlvjui.supabase.co")
+SUPABASE_KEY = (
+    os.environ.get("SUPABASE_SECRET_KEY")
+    or os.environ.get("SUPABASE_SERVICE_KEY", "")
+)
 
 CSV_PATH = "/home/noob/BARN-scan/propertyradar_export.csv"
 

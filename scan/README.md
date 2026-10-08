@@ -64,6 +64,7 @@ playwright install chromium  # For PG&E power checking
 ### Data File
 
 You need a Parcels CSV file from Alameda County with the following columns:
+
 - `APN` - Assessor's Parcel Number
 - `SitusCity` - City name
 - `SitusAddress` - Property address
@@ -90,7 +91,7 @@ python run_all.py --continuous
 
 The web UI will be available at http://localhost:5000
 
-> Note: For **cloud deployment (Vercel)** only the Flask app (`app.py` + `webgui/`) and `db.py` are used.  
+> Note: For **cloud deployment (Vercel)** only the Flask app (`app.py` + `webgui/`) and `db.py` are used.
 > Scanning scripts (`run_all.py`, `find_meas_w_addresses.py`, `pge_scanner.py`, etc.) are intended for **local use only** and are not run on Vercel.
 
 ### Environment Variables
@@ -116,11 +117,11 @@ GOOGLE_API_KEY=your-gemini-key
 
 For Vercel, set **Environment Variables** in the project (Settings → Environment Variables). Required:
 
-- `SUPABASE_URL` – your Supabase project URL  
-- `SUPABASE_ANON_KEY` – used for login page and JWT verification (Vercel integration may inject this)  
-- `SUPABASE_SERVICE_KEY` (or `SUPABASE_ANON_KEY`) – for server-side DB access  
+- `SUPABASE_URL` – your Supabase project URL
+- `SUPABASE_ANON_KEY` – used for login page and JWT verification (Vercel integration may inject this)
+- `SUPABASE_SERVICE_KEY` (or `SUPABASE_ANON_KEY`) – for server-side DB access
 
-Optional: `SECRET_KEY` (Flask session cookie), `SCOUT_API_KEY` (mobile/Scout app API key).  
+Optional: `SECRET_KEY` (Flask session cookie), `SCOUT_API_KEY` (mobile/Scout app API key).
 Auth is **Supabase Auth**; create users in Supabase Dashboard → Authentication → Users.
 Mobile API requests can authenticate with either `Authorization: Bearer <supabase_access_token>` or `X-API-Key: <SCOUT_API_KEY>`.
 
@@ -131,18 +132,21 @@ If these are missing, the app returns a 503 with instructions. To verify the dep
 ## Web Interface
 
 ### List View (`/`)
+
 - Search by address, APN, parcel number
 - Filter by: City, VPT, Delinquent, Power status, Favorites, Zip code
 - Sort by any column
 - Links to tax bills, Google Maps, Street View
 
 ### Map View (`/map`)
+
 - Interactive Leaflet map with marker clustering
 - Same filtering options as list view
 - Color-coded markers: Green (power on), Red (power off), Gray (unknown)
 - Click markers for property details and links
 
 ### Admin Panel (`/admin`)
+
 - View current scan status
 - Start/stop scans
 - View city statistics
@@ -151,17 +155,17 @@ If these are missing, the app returns a 503 with instructions. To verify the dep
 
 Properties are stored in SQLite with the following key fields:
 
-| Field | Description |
-|-------|-------------|
-| `apn` | Assessor's Parcel Number (primary key) |
-| `location_of_property` | Property address |
-| `city` | City name |
-| `has_vpt` | 1 if property has VPT marker |
-| `vpt_marker` | VPT marker text (e.g., "MEAS-W OAKLAND VPT") |
-| `delinquent` | 1 if property is tax delinquent |
-| `power_status` | "on", "off", or "unknown" |
-| `last_payment` | Date of last tax payment |
-| `bill_url` | Link to tax bill |
+| Field                    | Description                                  |
+| ------------------------ | -------------------------------------------- |
+| `apn`                  | Assessor's Parcel Number (primary key)       |
+| `location_of_property` | Property address                             |
+| `city`                 | City name                                    |
+| `has_vpt`              | 1 if property has VPT marker                 |
+| `vpt_marker`           | VPT marker text (e.g., "MEAS-W OAKLAND VPT") |
+| `delinquent`           | 1 if property is tax delinquent              |
+| `power_status`         | "on", "off", or "unknown"                    |
+| `last_payment`         | Date of last tax payment                     |
+| `bill_url`             | Link to tax bill                             |
 
 ## How It Works
 
@@ -174,17 +178,17 @@ Properties are stored in SQLite with the following key fields:
 
 ## API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | List view HTML |
-| `/map` | GET | Map view HTML |
-| `/admin` | GET | Admin panel HTML |
-| `/api/markers` | GET | Paginated map markers (`items`, `total`, `page`, `page_size`, `has_more`) |
-| `/api/scan/status` | GET | Current scan status |
-| `/api/scan/start` | POST | Start a scan |
-| `/api/scan/stop` | POST | Stop continuous scan |
-| `/api/favorites` | GET | List favorites |
-| `/api/favorites/<apn>` | POST/DELETE | Add/remove favorite |
+| Endpoint                 | Method      | Description                                                                         |
+| ------------------------ | ----------- | ----------------------------------------------------------------------------------- |
+| `/`                    | GET         | List view HTML                                                                      |
+| `/map`                 | GET         | Map view HTML                                                                       |
+| `/admin`               | GET         | Admin panel HTML                                                                    |
+| `/api/markers`         | GET         | Paginated map markers (`items`, `total`, `page`, `page_size`, `has_more`) |
+| `/api/scan/status`     | GET         | Current scan status                                                                 |
+| `/api/scan/start`      | POST        | Start a scan                                                                        |
+| `/api/scan/stop`       | POST        | Stop continuous scan                                                                |
+| `/api/favorites`       | GET         | List favorites                                                                      |
+| `/api/favorites/<apn>` | POST/DELETE | Add/remove favorite                                                                 |
 
 ## License
 

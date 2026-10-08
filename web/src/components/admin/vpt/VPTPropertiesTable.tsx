@@ -11,6 +11,8 @@ import {
   vptGetProperties,
   vptStartEnrichment,
   vptToggleFavorite,
+  isWithinDays,
+  formatAddedAt,
   type VPTProperty,
   type VPTMarker,
   type VPTFilters,
@@ -41,6 +43,7 @@ const toMarker = (property: VPTProperty): VPTMarker => ({
   condition_score: property.condition_score,
   property_search_url: property.property_search_url,
   mailing_search_url: property.mailing_search_url,
+  added_at: property.added_at,
 });
 
 export default function VPTPropertiesTable() {
@@ -154,13 +157,6 @@ export default function VPTPropertiesTable() {
     return <Badge variant="secondary">-</Badge>;
   };
 
-  const formatAddedAt = (value: string) => {
-    if (!value) return "-";
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return value;
-    return parsed.toLocaleDateString();
-  };
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-3 items-center">
@@ -248,9 +244,16 @@ export default function VPTPropertiesTable() {
           <Checkbox
             id="new-filter"
             checked={filters.new === "1"}
-            onCheckedChange={(checked) => updateFilter("new", checked ? "1" : undefined)}
+            onCheckedChange={(checked) => {
+              setFilters((prev) => ({
+                ...prev,
+                new: checked ? "1" : undefined,
+                ...(checked ? { sort: "added_at", order: "desc" } : {}),
+                page: 1,
+              }));
+            }}
           />
-          <label htmlFor="new-filter" className="text-sm">New</label>
+          <label htmlFor="new-filter" className="text-sm">New (≤30d)</label>
         </div>
         <Button onClick={fetchProperties} variant="outline" size="sm">
           <RefreshCw className="h-4 w-4 mr-1" />
@@ -319,7 +322,16 @@ export default function VPTPropertiesTable() {
                     {property.location_of_property}
                   </TableCell>
                   <TableCell className="text-xs font-mono">{property.apn}</TableCell>
-                  <TableCell className="text-sm">{formatAddedAt(property.added_at)}</TableCell>
+                  <TableCell className="text-sm whitespace-nowrap">
+                    <div className="flex items-center gap-1.5">
+                      <span>{formatAddedAt(property.added_at)}</span>
+                      {isWithinDays(property.added_at, 30) && (
+                        <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300 text-[10px] px-1.5 py-0 font-semibold tracking-wide">
+                          New
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell>
                     {property.has_vpt === "Yes" ? (
                       <Badge className="bg-red-100 text-red-800">Yes</Badge>

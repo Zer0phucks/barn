@@ -263,7 +263,7 @@ export default function VPTScannerControl() {
                         </Button>
                         <Button
                             onClick={handleStopScan}
-                            disabled={!scanStatus?.is_running || !scanStatus?.continuous_mode}
+                            disabled={!scanStatus?.is_running}
                             variant="destructive"
                         >
                             <Square className="h-4 w-4 mr-1" />

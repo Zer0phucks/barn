@@ -1,3 +1,5 @@
+cd
+
 # BARN Housing Platform
 
 BARN (Bay Area Renewal Network) is a React + Supabase web app for identifying vacant properties, partnering with owners, coordinating volunteers, reviewing housing applications, and processing donations.
@@ -132,6 +134,7 @@ If the donate flow returns `Missing STRIPE_SECRET_KEY`, the edge function is dep
 The `VPT Scanner` tab now reads data directly from Supabase (`bills`, `favorites`, `parcels`) using scanner RPCs (`get_bills_filtered`, `get_bills_for_map`).
 
 Notes:
+
 - No separate VPT web login is required inside BARN admin.
 - Favorites toggle and scanner filters are handled directly in Supabase.
 - Scanner control actions call Supabase Edge Function `vpt-scanner-control`, which forwards to a scanner worker API.
